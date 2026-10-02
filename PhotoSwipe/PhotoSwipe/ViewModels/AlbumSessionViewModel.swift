@@ -155,6 +155,14 @@ final class AlbumSessionViewModel: ObservableObject {
         rememberPosition()
     }
 
+    /// End of the deck: raise the rating filter one star and start again
+    /// from the first photo that qualifies.
+    func nextRound() {
+        minRating = Stars.clamp(minRating + 1)
+        currentID = deck.first?.id
+        rememberPosition()
+    }
+
     /// Re-anchor after the filter changes: stay on the current photo if it
     /// still qualifies, otherwise move to the next one that does.
     func filterChanged() {

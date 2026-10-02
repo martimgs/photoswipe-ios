@@ -39,7 +39,7 @@ struct SwipeDeckView: View {
                 endState
             }
             FilmstripView(photos: vm.deck, currentID: vm.currentID) { vm.jump(to: $0) }
-                .padding(.top, 10)
+                .padding(.top, 14)
             actionBar
         }
         .frame(maxWidth: Theme.readableWidth)
@@ -48,13 +48,16 @@ struct SwipeDeckView: View {
 
     private var landscape: some View {
         HStack(spacing: 0) {
-            if let current = vm.current {
-                card(current)
-                    .padding(.vertical, 12)
-                    .padding(.leading, 16)
-            } else {
-                endState
+            VStack(spacing: 8) {
+                if let current = vm.current {
+                    card(current)
+                } else {
+                    endState
+                }
+                FilmstripView(photos: vm.deck, currentID: vm.currentID) { vm.jump(to: $0) }
             }
+            .padding(.vertical, 10)
+            .padding(.leading, 16)
             VStack(spacing: 14) {
                 header
                 Spacer(minLength: 0)
@@ -197,11 +200,20 @@ struct SwipeDeckView: View {
                             button: vm.minRating == 0 ? "Open Grid" : "Show All Photos") {
                     if vm.minRating == 0 { onOpenGrid() } else { vm.minRating = 0 }
                 }
-            } else {
-                MessageView(icon: "checkmark.circle", title: "You've reached the end",
-                            message: "Review your picks in the grid, or go through the album again.",
+            } else if vm.minRating >= 5 {
+                MessageView(icon: "checkmark.circle", title: "All done!",
+                            message: "You've been through every 5-star photo.",
                             button: "Review in Grid") { onOpenGrid() }
-                Button("Back to first photo") { vm.startOver() }
+            } else {
+                // Tap anywhere to go round again, one star stricter.
+                Button { Haptics.success(); vm.nextRound() } label: {
+                    MessageView(icon: "arrow.counterclockwise.circle", title: "You've reached the end",
+                                message: "Tap to start from the beginning with \(RatingFilter.label(vm.minRating + 1)).")
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Raises the rating filter to \(RatingFilter.label(vm.minRating + 1))")
+                Button("Review in Grid") { onOpenGrid() }
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.inkSecondary)
             }
