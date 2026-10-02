@@ -7,6 +7,7 @@ struct RatingGridView: View {
     @ObservedObject var vm: AlbumSessionViewModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var sync = DropboxSyncEngine.shared
+    @ObservedObject private var connectivity = Connectivity.shared
     @State private var tab: Tab = .selected
     @State private var sort: Sort = .album
 
@@ -194,21 +195,17 @@ struct RatingGridView: View {
         }
     }
 
-    /// Per-photo Dropbox state: arrow up = rating not yet synced,
-    /// arrow down = on device (album downloaded).
+    /// Marks only photos whose rating change hasn't synced to Dropbox
+    /// (offline, or a failed attempt). Download state is shown per album.
     @ViewBuilder
     private func photoStatus(_ item: PhotoItem) -> some View {
-        if item.source == .dropbox {
-            let icon: String? = sync.pendingFileIDs.contains(item.id) ? "arrow.up.circle.fill"
-                : OfflineStore.hasLocalCopy(item.id) ? "arrow.down.circle.fill" : nil
-            if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(Theme.paper, Theme.ink.opacity(0.75))
-                    .padding(6)
-                    .accessibilityLabel(icon.hasPrefix("arrow.up") ? "Rating not synced yet" : "Available offline")
-            }
+        if item.source == .dropbox, sync.isUnsynced(fileID: item.id, isOnline: connectivity.isOnline) {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.system(size: 16))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(Theme.paper, Theme.ink.opacity(0.75))
+                .padding(6)
+                .accessibilityLabel("Rating not synced yet")
         }
     }
 
