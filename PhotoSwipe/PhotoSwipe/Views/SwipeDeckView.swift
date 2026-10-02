@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// Preference key used to pass the card area's largest dimension up to the
+/// deck so it can prefetch at the correct pixel size.
+private struct CardSizeKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// The rating screen: header, photo card, star row, filmstrip, X / heart.
 /// Right = +1 star, left = −1 star, up = pick (5 stars), down = reject.
 /// Each gesture applies to the current photo, then advances.
@@ -9,7 +18,10 @@ struct SwipeDeckView: View {
 
     @State private var drag: CGSize = .zero
     @State private var fullScreen: PhotoItem?
+    /// Largest pixel dimension of the card area, used for prefetch sizing.
+    @State private var cardPixelSide: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         GeometryReader { geo in
@@ -24,6 +36,21 @@ struct SwipeDeckView: View {
         .background(Theme.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(item: $fullScreen) { FullScreenPhotoView(item: $0) }
+        .onPreferenceChange(CardSizeKey.self) { side in
+            if side > 0 { cardPixelSide = side * displayScale }
+        }
+        .onChange(of: vm.currentID, initial: true) { _, _ in prefetchAround() }
+    }
+
+    private func prefetchAround() {
+        guard cardPixelSide > 0 else { return }
+        let d = vm.deck
+        guard let idx = d.firstIndex(where: { $0.id == vm.currentID }) else { return }
+        let lo = max(0, idx - 12)
+        let hi = min(d.count - 1, idx + 12)
+        let items = Array(d[lo...hi])
+        let px = CGSize(width: cardPixelSide, height: cardPixelSide)
+        ImageLoader.shared.prefetch(items, pixelSize: px)
     }
 
     private var portrait: some View {
@@ -151,6 +178,13 @@ struct SwipeDeckView: View {
         }
         .animation(.cardSpring, value: vm.currentID)
         .frame(maxHeight: .infinity)
+        // Measure the card area so prefetchAround() uses the right pixel size.
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: CardSizeKey.self,
+                                       value: max(geo.size.width, geo.size.height))
+            }
+        )
     }
 
     private var isVertical: Bool { abs(drag.height) > abs(drag.width) }

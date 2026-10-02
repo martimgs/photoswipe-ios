@@ -108,7 +108,19 @@ struct PhotoCardView: View {
     private func loadImage(fitting cardSize: CGSize) async {
         let side = max(cardSize.width, cardSize.height) * displayScale
         let size = CGSize(width: side, height: side)
-        if let img = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false) {
+
+        // Show any cached image instantly — no blank frame while the exact size loads.
+        if let fast = ImageLoader.shared.bestAvailableSync(for: item) {
+            image = fast
+        }
+
+        guard let img = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false) else { return }
+
+        // If we already had something to show, swap silently (prefetch hit or placeholder).
+        // Only animate when going from blank to first image.
+        if image != nil {
+            image = img
+        } else {
             withAnimation(.easeOut(duration: 0.2)) { image = img }
         }
     }
