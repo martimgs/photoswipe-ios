@@ -65,18 +65,22 @@ Dropbox integration, export.
 ## Build
 
 ```bash
-cd PhotoSwipe
-xcodebuild -project PhotoSwipe.xcodeproj -scheme PhotoSwipe \
+cd Pickory
+xcodebuild -project Pickory.xcodeproj -scheme Pickory \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
+That command is for compile checks only. To install on a simulator, build without
+`CODE_SIGNING_ALLOWED=NO` (e.g. `-destination 'id=<udid>'`): an unsigned build has no
+`application-identifier`, so keychain writes fail and Dropbox sign-in ends in `token_storage_error`.
+
 The project uses Xcode synchronized folders: adding/removing Swift files under
-`PhotoSwipe/PhotoSwipe/` needs no `project.pbxproj` edits. The simulator photo library is nearly
+`Pickory/Pickory/` needs no `project.pbxproj` edits. The simulator photo library is nearly
 empty; add images with `xcrun simctl addmedia booted <file>`.
 
 ## Conventions
 - SwiftUI + MVVM, no third-party deps, fully on-device, no networking (until Dropbox).
 - All PhotoKit mutations go through `PHPhotoLibrary.performChanges`.
 - Light warm off-white UI, minimal type, large rounded cards, black star icons, lots of whitespace.
-- Signing: `DEVELOPMENT_TEAM` and `PRODUCT_BUNDLE_IDENTIFIER` (`com.alperen.PhotoSwipe`) are the
+- Signing: `DEVELOPMENT_TEAM` and `PRODUCT_BUNDLE_IDENTIFIER` (`com.alperen.Pickory`) are the
   upstream author's — change them before running on a device.
