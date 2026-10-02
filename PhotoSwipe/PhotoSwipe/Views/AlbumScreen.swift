@@ -1,11 +1,15 @@
 import SwiftUI
+import SwiftData
 
-/// Hosts one connected album's session.
+/// Hosts one connected album's session. The swipe and grid screens share the
+/// same view model.
 struct AlbumScreen: View {
-    @StateObject private var vm: SwipeDeckViewModel
+    @StateObject private var vm: AlbumSessionViewModel
+    @Environment(\.modelContext) private var context
+    @State private var showGrid = false
 
     init(album: ConnectedAlbum) {
-        _vm = StateObject(wrappedValue: SwipeDeckViewModel(album: album))
+        _vm = StateObject(wrappedValue: AlbumSessionViewModel(album: album))
     }
 
     var body: some View {
@@ -19,15 +23,15 @@ struct AlbumScreen: View {
             case .empty:
                 MessageView(icon: "photo", title: "No photos",
                             message: "This album has no photos yet.")
-            case .swiping:
-                SwipeDeckView(vm: vm)
-            case .done:
-                MessageView(icon: "checkmark.circle", title: "All rated",
-                            message: "You've been through every photo.")
+            case .ready:
+                SwipeDeckView(vm: vm) { showGrid = true }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.paper.ignoresSafeArea())
-        .task { vm.load() }
+        .navigationDestination(isPresented: $showGrid) {
+            Text("Grid")   // replaced in the next step
+        }
+        .task { if vm.phase == .loading { vm.load(context: context) } }
     }
 }

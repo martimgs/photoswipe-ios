@@ -29,7 +29,7 @@ enum Theme {
 
     static let textDim = Color.white.opacity(0.5)
 
-    static let cardCorner: CGFloat = 30
+    static let cardCorner: CGFloat = 20
     static let swipeThreshold: CGFloat = 105
 
     static func gradient(_ a: Color, _ b: Color) -> LinearGradient {

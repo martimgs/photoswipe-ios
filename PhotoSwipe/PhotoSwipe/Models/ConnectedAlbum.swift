@@ -13,15 +13,14 @@ final class ConnectedAlbum {
     /// Name at connection time; refreshed from the source when available.
     var name: String
     var dateAdded: Date
-    /// Where the swipe deck was left, so reopening resumes there.
-    var lastIndex: Int
+    /// The photo the swipe deck was left on, so reopening resumes there.
+    var lastPhotoID: String?
 
     init(source: PhotoSourceKind, externalID: String, name: String) {
         self.sourceRaw = source.rawValue
         self.externalID = externalID
         self.name = name
         self.dateAdded = .now
-        self.lastIndex = 0
     }
 
     var source: PhotoSourceKind { PhotoSourceKind(rawValue: sourceRaw) ?? .applePhotos }

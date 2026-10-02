@@ -1,155 +1,91 @@
 import SwiftUI
 import Photos
 
-/// A single photo card: lazily-loaded image with a glass edge and a colored
-/// glow + stamp that grows with the active swipe direction. Shows the photo's
-/// current star rating in the corner.
+/// What a drag is about to do, shown as a large white overlay on the card.
+enum SwipeIntent: Equatable {
+    case up, down, pick, reject
+
+    var symbol: String {
+        switch self {
+        case .up: return "star.fill"
+        case .down: return "star.slash"
+        case .pick: return "heart.fill"
+        case .reject: return "xmark"
+        }
+    }
+
+    var caption: String {
+        switch self {
+        case .up: return "+1"
+        case .down: return "−1"
+        case .pick: return "Pick"
+        case .reject: return "Reject"
+        }
+    }
+}
+
+/// A large rounded photo card. While dragging, shows the pending change as a
+/// white overlay whose opacity follows the drag.
 struct PhotoCardView: View {
     let asset: PHAsset
-    var rating: PHAsset.Rating = .unset
-    var translation: CGSize = .zero
-    var isTop: Bool = true
+    var intent: SwipeIntent? = nil
+    var intentStrength: Double = 0
 
     @State private var image: UIImage?
-    @State private var appeared = false
     @Environment(\.displayScale) private var displayScale
     private let service = PhotoLibraryService()
-
-    private var hShift: CGFloat { translation.width / Theme.swipeThreshold }   // +1 star / −1 star
-    private var vShift: CGFloat { -translation.height / Theme.swipeThreshold }  // + = 5 stars, − = reject
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
-                    .fill(Theme.card)
-
+                Theme.surface
                 if let image {
-                    // Blurred fill behind, full photo fitted in front — shows
-                    // landscape / sideways photos completely, no harsh crop.
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
-                        .blur(radius: 24)
-                        .overlay(Color.black.opacity(0.22))
-
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .opacity(appeared ? 1 : 0)
-                        .scaleEffect(appeared ? 1 : 1.04)
+                        .transition(.opacity)
                 } else {
-                    ProgressView().tint(.white.opacity(0.55))
+                    ProgressView().tint(Theme.inkSecondary)
                 }
-
-                if image != nil {
-                    metadataScrim
-                    if isTop { intentLayer }
+                if let intent {
+                    overlay(intent)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
-                    .strokeBorder(glowColor.opacity(isTop ? min(glowStrength, 0.9) : 0), lineWidth: 3)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
-                    .strokeBorder(Theme.stroke, lineWidth: 1)
-            )
             .task(id: asset.localIdentifier) { await loadImage(fitting: geo.size) }
         }
-        .cardShadow()
+        .shadow(color: .black.opacity(0.12), radius: 18, y: 10)
+        .accessibilityElement()
+        .accessibilityLabel(asset.creationDate.map {
+            "Photo from \($0.formatted(date: .abbreviated, time: .omitted))"
+        } ?? "Photo")
     }
 
-    // MARK: Layers
-
-    private var metadataScrim: some View {
-        VStack {
-            Spacer()
-            LinearGradient(colors: [.clear, .black.opacity(0.6)],
-                           startPoint: .center, endPoint: .bottom)
-                .frame(height: 150)
-                .overlay(alignment: .bottom) {
-                    HStack {
-                        if let date = asset.creationDate {
-                            Text(date.formatted(date: .abbreviated, time: .omitted))
-                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.92))
-                        }
-                        Spacer()
-                        stars
-                    }
-                    .padding(20)
-                }
-        }
-        .allowsHitTesting(false)
-    }
-
-    private var stars: some View {
-        HStack(spacing: 3) {
-            ForEach(1...5, id: \.self) { i in
-                Image(systemName: i <= rating.rawValue ? "star.fill" : "star")
-                    .foregroundStyle(i <= rating.rawValue ? Theme.favorite : .white.opacity(0.45))
-            }
-        }
-        .font(.system(size: 14, weight: .bold))
-        .accessibilityLabel(rating == .unset ? "Unrated" : "\(rating.rawValue) stars")
-    }
-
-    private var glowColor: Color {
-        if abs(vShift) > abs(hShift) { return vShift > 0 ? Theme.favorite : Theme.trash }
-        return hShift >= 0 ? Theme.keep : Theme.album
-    }
-    private var glowStrength: Double {
-        Double(max(abs(hShift), abs(vShift)))
-    }
-
-    private var intentLayer: some View {
-        // Only the dominant axis stamps, so a slightly diagonal swipe
-        // doesn't flash the perpendicular label.
-        let vertical = abs(vShift) > abs(hShift)
+    private func overlay(_ intent: SwipeIntent) -> some View {
+        let o = min(max(intentStrength, 0), 1)
         return ZStack {
-            stamp("+1 ★", Theme.keep, rotation: -16, alignment: .topLeading,
-                  opacity: vertical ? 0 : max(0, hShift))
-            stamp("−1 ★", Theme.album, rotation: 16, alignment: .topTrailing,
-                  opacity: vertical ? 0 : max(0, -hShift))
-            // up = 5 stars, down = reject
-            if translation.height <= 0 {
-                stamp("5 ★", Theme.favorite, rotation: 0, alignment: .top,
-                      opacity: vertical ? max(0, vShift) : 0)
-            } else {
-                stamp("REJECT", Theme.trash, rotation: 0, alignment: .bottom,
-                      opacity: vertical ? max(0, -vShift) : 0)
+            Color.black.opacity(0.18 * o)
+            VStack(spacing: 6) {
+                Image(systemName: intent.symbol)
+                    .font(.system(size: 72, weight: .regular))
+                Text(intent.caption)
+                    .font(.system(size: 20, weight: .medium))
             }
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.35), radius: 10)
+            .scaleEffect(0.8 + 0.2 * o)
         }
-        .padding(24)
-    }
-
-    private func stamp(_ text: String, _ color: Color, rotation: Double,
-                       alignment: Alignment, opacity: Double) -> some View {
-        let o = min(opacity, 1)
-        return Text(text)
-            .font(.system(size: 32, weight: .heavy, design: .rounded))
-            .foregroundStyle(color)
-            .padding(.horizontal, 16).padding(.vertical, 9)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(color, lineWidth: 3))
-            .shadow(color: color.opacity(0.5 * o), radius: 12)
-            .rotationEffect(.degrees(rotation))
-            .scaleEffect(0.85 + 0.15 * o)
-            .opacity(o)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+        .opacity(o)
+        .allowsHitTesting(false)
     }
 
     /// Request pixels for the card's actual on-screen size.
     private func loadImage(fitting cardSize: CGSize) async {
         let size = CGSize(width: cardSize.width * displayScale, height: cardSize.height * displayScale)
-        if let img = await service.requestImage(for: asset, targetSize: size, contentMode: .aspectFit) {
-            image = img
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { appeared = true }
+        if let img = await service.requestImage(for: asset, targetSize: size, contentMode: .aspectFill) {
+            withAnimation(.easeOut(duration: 0.2)) { image = img }
         }
     }
 }
