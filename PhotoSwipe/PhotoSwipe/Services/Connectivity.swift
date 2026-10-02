@@ -42,6 +42,24 @@ final class Connectivity: ObservableObject {
         update()
     }
 
+    /// A Dropbox request just succeeded, so the network is there even if
+    /// the path monitor missed it (e.g. after the Mac or phone slept).
+    func markReachable() {
+        guard !networkAvailable else { return }
+        networkAvailable = true
+        update()
+    }
+
+    /// Whether to attempt network work on an explicit user action: only
+    /// Simulate Offline blocks it; the path monitor can be stale.
+    var mayTryNetwork: Bool {
+        #if DEBUG
+        return !simulateOffline
+        #else
+        return true
+        #endif
+    }
+
     private func update() {
         #if DEBUG
         let online = networkAvailable && !simulateOffline

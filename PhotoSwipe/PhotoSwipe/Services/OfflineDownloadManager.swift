@@ -177,9 +177,10 @@ final class OfflineDownloadManager: ObservableObject {
     }
 
     /// Start waiting downloads up to the concurrency limit.
-    /// New requests wait while offline; `becameOnline` restarts the queue.
+    /// New requests wait only while Simulate Offline is on. Real network
+    /// loss is handled by the background session, which waits and resumes.
     private func pump() {
-        guard Connectivity.shared.isOnline,
+        guard Connectivity.shared.mayTryNetwork,
               let client = DropboxClientsManager.authorizedBackgroundClient else { return }
         while runningCount < Self.maxConcurrent,
               let (albumID, fileID) = nextWaiting() {
@@ -256,6 +257,7 @@ final class OfflineDownloadManager: ObservableObject {
         guard let album = album(albumID) else { return }
 
         if OfflineStore.hasLocalCopy(fileID) {
+            if error == nil { Connectivity.shared.markReachable() }
             // Success — or a duplicate request for a file another one saved.
             if let file = files(of: album).first(where: { $0.fileID == fileID }), file.localFileName == nil {
                 file.localFileName = OfflineStore.fileName(for: fileID)

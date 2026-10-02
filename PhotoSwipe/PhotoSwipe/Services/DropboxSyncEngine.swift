@@ -64,7 +64,8 @@ final class DropboxSyncEngine: ObservableObject {
         retryTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.pendingCount > 0 else { return }
-                self.scheduleSync()
+                // Try for real; a successful call corrects a stale monitor.
+                await self.syncNow(force: true)
             }
         }
         scheduleSync()
@@ -103,11 +104,13 @@ final class DropboxSyncEngine: ObservableObject {
         }
     }
 
-    /// Process the whole queue now (oldest change first).
-    func syncNow() async {
+    /// Process the whole queue now (oldest change first). `force` tries even
+    /// if the connectivity monitor says offline (it can be stale); only
+    /// Simulate Offline blocks a forced attempt.
+    func syncNow(force: Bool = false) async {
         refreshCount()
-        guard !isSyncing, tagsUnavailableReason == nil, let context, let client,
-              Connectivity.shared.isOnline else { return }
+        let mayTry = force ? Connectivity.shared.mayTryNetwork : Connectivity.shared.isOnline
+        guard !isSyncing, tagsUnavailableReason == nil, let context, let client, mayTry else { return }
         isSyncing = true
         defer {
             isSyncing = false
@@ -115,7 +118,7 @@ final class DropboxSyncEngine: ObservableObject {
         }
 
         for entry in SyncQueue(context: context).all() {
-            guard Connectivity.shared.isOnline else { break }
+            guard force ? Connectivity.shared.mayTryNetwork : Connectivity.shared.isOnline else { break }
             let snapshotChangedAt = entry.changedAt
             let wanted = Self.tags(rating: entry.rating, rejected: entry.isRejected)
             do {
@@ -125,6 +128,7 @@ final class DropboxSyncEngine: ObservableObject {
                     context.delete(entry)
                 }
                 lastError = nil
+                Connectivity.shared.markReachable()
             } catch let error as SyncError {
                 switch error {
                 case .fileGone:

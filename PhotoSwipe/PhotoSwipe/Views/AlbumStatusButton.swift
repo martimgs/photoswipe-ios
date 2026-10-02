@@ -60,17 +60,26 @@ struct AlbumStatusButton: View {
         Haptics.tap()
         switch status {
         case .onlineOnly:
-            guard connectivity.isOnline else { alert = "Connect to the internet to download this album."; return }
+            guard connectivity.mayTryNetwork else { alert = "Connect to the internet to download this album."; return }
             guard DropboxAuth.shared.isSignedIn else { alert = "Sign in to Dropbox in Settings to download."; return }
             downloads.download(album)
         case .downloading:
             downloads.pause(album)
         case .paused:
-            guard connectivity.isOnline else { alert = "Downloads resume when you're back online."; return }
+            guard connectivity.mayTryNetwork else { alert = "Downloads resume when you're back online."; return }
             downloads.resume(album)
         case .pending:
-            guard connectivity.isOnline else { alert = "Will sync when you're back online."; return }
-            Task { await sync.syncNow() }
+            // Always try: the user may know they're online even if the
+            // connectivity monitor hasn't noticed yet.
+            guard connectivity.mayTryNetwork else { alert = "Will sync when you're back online."; return }
+            Task {
+                isRemoving = true
+                await sync.syncNow(force: true)
+                isRemoving = false
+                if (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 {
+                    alert = "Couldn't reach Dropbox. Will sync when you're back online."
+                }
+            }
         case .offline:
             confirmRemove = true
         }
@@ -82,11 +91,11 @@ struct AlbumStatusButton: View {
         isRemoving = true
         defer { isRemoving = false }
         if (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 {
-            guard connectivity.isOnline else {
+            guard connectivity.mayTryNetwork else {
                 alert = "You're offline. Ratings will sync when you're back online; the downloads are kept until then."
                 return
             }
-            await sync.syncNow()
+            await sync.syncNow(force: true)
         }
         guard (sync.pendingCountByAlbum[album.externalID] ?? 0) == 0 else {
             alert = "Some ratings couldn't sync yet, so the downloads were kept. Try again in a moment."
