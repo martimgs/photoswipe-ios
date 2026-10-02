@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @EnvironmentObject private var dropbox: DropboxAuth
     @EnvironmentObject private var sync: DropboxSyncEngine
+    @ObservedObject private var connectivity = Connectivity.shared
     @State private var confirmSignOut = false
     @AppStorage(OfflineDownloadManager.qualityKey) private var quality = DownloadQuality.optimized.rawValue
     @State private var estimates: (optimized: Int64, originals: Int64, photos: Int) = (0, 0, 0)
@@ -76,6 +77,17 @@ struct SettingsView: View {
                     Text("Used when you make a Dropbox album available offline. Optimized saves Dropbox-rendered copies up to 2048 px; Originals saves the full files. Sizes are for all \(estimates.photos) photos in your Dropbox albums; the Optimized size is an estimate.")
                 }
                 .listRowBackground(Color.white.opacity(0.6))
+
+                #if DEBUG
+                Section {
+                    Toggle("Simulate Offline", isOn: $connectivity.simulateOffline)
+                } header: {
+                    Text("Developer")
+                } footer: {
+                    Text("Debug builds only. Acts as if there's no internet: no Dropbox syncing, downloads or online thumbnails. Rating changes queue up and show the arrow-up icon.")
+                }
+                .listRowBackground(Color.white.opacity(0.6))
+                #endif
 
                 Section {
                     LabeledContent("Version", value: version)

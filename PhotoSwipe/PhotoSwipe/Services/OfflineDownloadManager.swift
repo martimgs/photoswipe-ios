@@ -42,6 +42,9 @@ final class OfflineDownloadManager: ObservableObject {
     func start(container: ModelContainer) {
         guard self.container == nil else { return }
         self.container = container
+        NotificationCenter.default.addObserver(forName: Connectivity.becameOnline, object: nil, queue: .main) { _ in
+            Task { @MainActor in OfflineDownloadManager.shared.pump() }
+        }
         if OfflineStore.removeLegacyFiles() {
             // Re-download albums that were (partly) offline under the old naming.
             for album in albums() where album.offlineState != .onlineOnly {
@@ -174,8 +177,10 @@ final class OfflineDownloadManager: ObservableObject {
     }
 
     /// Start waiting downloads up to the concurrency limit.
+    /// New requests wait while offline; `becameOnline` restarts the queue.
     private func pump() {
-        guard let client = DropboxClientsManager.authorizedBackgroundClient else { return }
+        guard Connectivity.shared.isOnline,
+              let client = DropboxClientsManager.authorizedBackgroundClient else { return }
         while runningCount < Self.maxConcurrent,
               let (albumID, fileID) = nextWaiting() {
             guard let album = album(albumID) else { continue }

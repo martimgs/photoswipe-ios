@@ -210,7 +210,7 @@ final class DropboxService {
         if FileManager.default.fileExists(atPath: cached.path) {
             return await ImageLoader.downsample(cached, maxPixels: maxPixels)
         }
-        guard let client = try? client else { return nil }
+        guard Connectivity.shared.isOnline, let client = try? client else { return nil }
         do {
             _ = try await client.files.getThumbnailV2(
                 resource: .path(fileID), format: .jpeg, size: size, mode: .bestfit,

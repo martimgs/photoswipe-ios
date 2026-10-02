@@ -32,6 +32,7 @@ final class ImageLoader {
             if OfflineStore.hasLocalCopy(item.id) {
                 image = await Self.downsample(OfflineStore.localURL(for: item.id), maxPixels: maxPixels)
             } else {
+                // Online-only photo: needs the network (cached thumbnails still load).
                 image = await dropboxThumbnail?(item.id, maxPixels)
             }
         }
