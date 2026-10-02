@@ -108,6 +108,7 @@ final class DropboxService {
         }
 
         var seen = Set<String>()
+        var newFiles: [(fileID: String, pathLower: String)] = []
         while true {
             for entry in result.entries {
                 if let file = entry as? Files.FileMetadata {
@@ -137,6 +138,7 @@ final class DropboxService {
                         context.insert(record)
                         existing[file.id] = record
                         summary.added.append(file.id)
+                        if let lower = file.pathLower { newFiles.append((file.id, lower)) }
                     }
                 } else if entry is Files.DeletedMetadata {
                     // Deleted entries carry no ID; match by lowercased path.
@@ -159,6 +161,9 @@ final class DropboxService {
         }
 
         album.listCursor = result.cursor
+        try? context.save()
+        // Ratings set on another device come in as tags on new files.
+        await DropboxSyncEngine.shared.importTags(for: newFiles, context: context)
         album.lastCheckedAt = .now
         try? context.save()
         return summary

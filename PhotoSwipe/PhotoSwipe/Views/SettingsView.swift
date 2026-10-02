@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @EnvironmentObject private var dropbox: DropboxAuth
+    @EnvironmentObject private var sync: DropboxSyncEngine
     @State private var confirmSignOut = false
 
     var body: some View {
@@ -35,6 +36,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                        LabeledContent("Ratings to sync", value: sync.pendingCount == 0 ? "None" : "\(sync.pendingCount)")
                         Button("Sign Out", role: .destructive) { confirmSignOut = true }
                     } else {
                         Button("Sign In to Dropbox") { dropbox.signIn() }
@@ -44,6 +46,8 @@ struct SettingsView: View {
                 } footer: {
                     if let error = dropbox.lastError {
                         Text(error)
+                    } else if let reason = sync.tagsUnavailableReason {
+                        Text("Ratings can't be saved to Dropbox as tags: \(reason)")
                     } else {
                         Text(dropbox.isSignedIn
                              ? "Signing out keeps your albums, ratings and downloaded photos in PhotoSwipe."
@@ -64,7 +68,9 @@ struct SettingsView: View {
             .confirmationDialog("Sign out of Dropbox?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign Out", role: .destructive) { dropbox.signOut() }
             } message: {
-                Text("Your Dropbox albums, ratings and downloaded photos stay in PhotoSwipe.")
+                Text(sync.pendingCount > 0
+                     ? "\(sync.pendingCount) rating changes haven't synced yet. They stay in PhotoSwipe and sync after you sign in again."
+                     : "Your Dropbox albums, ratings and downloaded photos stay in PhotoSwipe.")
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
