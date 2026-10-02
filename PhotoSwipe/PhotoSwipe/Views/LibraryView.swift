@@ -39,6 +39,8 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .frame(maxWidth: Theme.readableWidth)
+            .frame(maxWidth: .infinity)
             .background(Theme.paper)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ConnectedAlbum.self) { album in

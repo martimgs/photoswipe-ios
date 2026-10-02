@@ -85,13 +85,15 @@ struct RatingGridView: View {
         VStack(spacing: 0) {
             header
             GeometryReader { geo in
-                let side = (geo.size.width - 16 * 2 - 8) / 2
+                // 2 columns on iPhone; more on wider screens (~220 pt each).
+                let columns = max(2, Int((geo.size.width - 32 + 8) / (220 + 8)))
+                let side = (geo.size.width - 32 - 8 * CGFloat(columns - 1)) / CGFloat(columns)
                 ScrollView {
                     if items.isEmpty {
                         emptyState.frame(width: geo.size.width, height: geo.size.height * 0.8)
                     } else {
-                        LazyVGrid(columns: [GridItem(.fixed(side), spacing: 8),
-                                            GridItem(.fixed(side), spacing: 8)], spacing: 14) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: 8), count: columns),
+                                  spacing: 14) {
                             ForEach(items) { asset in
                                 cell(asset, side: side)
                             }
@@ -189,7 +191,9 @@ struct RatingGridView: View {
                 .buttonStyle(.plain)
                 .padding(.leading, 4)
             } else {
-                StarRatingView(rating: vm.rating(of: asset), size: 12, spacing: 3)
+                // Scale the stars with the thumbnail (larger on iPad).
+                StarRatingView(rating: vm.rating(of: asset),
+                               size: min(max(side * 0.06, 12), 16), spacing: side > 200 ? 4 : 3)
                     .padding(.leading, 4)
             }
         }
@@ -248,9 +252,11 @@ struct RatingGridView: View {
                 .accessibilityAddTraits(tab == t ? .isSelected : [])
             }
         }
+        .frame(maxWidth: 520)   // don't stretch the tabs across an iPad
         .padding(.horizontal, 24)
         .padding(.top, 8)
         .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
         .background(Theme.paper)
         .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }

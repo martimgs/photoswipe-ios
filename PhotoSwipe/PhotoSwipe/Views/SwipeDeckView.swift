@@ -26,6 +26,8 @@ struct SwipeDeckView: View {
                 .padding(.top, 10)
             actionBar
         }
+        .frame(maxWidth: Theme.readableWidth)
+        .frame(maxWidth: .infinity)
         .background(Theme.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }

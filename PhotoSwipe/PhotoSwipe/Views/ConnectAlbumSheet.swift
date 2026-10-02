@@ -15,7 +15,7 @@ struct ConnectAlbumSheet: View {
                     NavigationLink {
                         AppleAlbumPicker(connected: connected) { dismiss() }
                     } label: {
-                        sourceRow("photo.on.rectangle", "Apple Photos", "Albums on this iPhone")
+                        sourceRow("photo.on.rectangle", "Apple Photos", "Albums on this \(UIDevice.current.model)")
                     }
                     NavigationLink {
                         DropboxFolderPicker(connected: connected) { dismiss() }

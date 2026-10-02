@@ -11,6 +11,9 @@ enum Theme {
     static let hairline = Color.black.opacity(0.08)
 
     static let cardCorner: CGFloat = 20
+    /// Widest the main column gets on iPad, so lists and the swipe card
+    /// don't stretch across a 13-inch screen.
+    static let readableWidth: CGFloat = 760
     static let swipeThreshold: CGFloat = 105
 }
 

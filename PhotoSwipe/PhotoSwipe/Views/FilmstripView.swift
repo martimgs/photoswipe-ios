@@ -8,6 +8,7 @@ struct FilmstripView: View {
     let onSelect: (PhotoItem) -> Void
 
     var body: some View {
+        GeometryReader { geo in
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 4) {
@@ -30,11 +31,14 @@ struct FilmstripView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
+                // Centered when the strip is shorter than the screen.
+                .frame(minWidth: geo.size.width)
             }
             .onChange(of: currentID, initial: true) { _, id in
                 guard let id else { return }
                 withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
             }
+        }
         }
         .frame(height: 76)
     }
