@@ -23,6 +23,9 @@ final class ConnectedAlbum {
     var folderPathLower: String?
     /// `list_folder` cursor for incremental "check for changes".
     var listCursor: String?
+    /// True once the album has been listed recursively (subfolders included).
+    /// Older albums were listed flat; their cursor is dropped once.
+    var isRecursive: Bool = false
     var lastCheckedAt: Date?
     /// Raw value of `OfflineState`.
     var offlineStateRaw: String = OfflineState.onlineOnly.rawValue

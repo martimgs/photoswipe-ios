@@ -8,8 +8,8 @@ struct AlbumScreen: View {
     @Environment(\.modelContext) private var context
     @State private var showGrid = false
 
-    init(album: ConnectedAlbum) {
-        _vm = StateObject(wrappedValue: AlbumSessionViewModel(album: album))
+    init(route: AlbumRoute) {
+        _vm = StateObject(wrappedValue: AlbumSessionViewModel(album: route.album, folder: route.folder))
     }
 
     /// Dropbox: pick up new/removed files whenever the album opens online.

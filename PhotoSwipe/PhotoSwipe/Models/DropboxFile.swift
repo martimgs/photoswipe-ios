@@ -24,6 +24,12 @@ final class DropboxFile {
     var localQualityRaw: String?
     /// Bytes on disk for the local copy.
     var localSize: Int64
+    /// Lowercased full Dropbox path, refreshed on each check. Used only to
+    /// match deleted entries, which carry no ID.
+    var pathLower: String?
+    /// Subfolder inside the album, relative to its root ("" = top level,
+    /// "Day 1/Morning" = nested). Display case.
+    var folderPath: String = ""
 
     init(fileID: String, albumID: String, name: String, size: Int64,
          serverModified: Date?, clientModified: Date?, contentHash: String?) {

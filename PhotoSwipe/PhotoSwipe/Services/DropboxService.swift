@@ -53,10 +53,10 @@ final class DropboxService {
         return folders.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// Number of images directly inside a folder (for the picker).
+    /// Number of images in a folder, including all its subfolders.
     func imageCount(in folderID: String) async throws -> Int {
         var count = 0
-        var result = try await client.files.listFolder(path: folderID).response()
+        var result = try await client.files.listFolder(path: folderID, recursive: true).response()
         while true {
             count += result.entries.filter { Self.isImage($0) }.count
             guard result.hasMore else { break }
@@ -79,19 +79,25 @@ final class DropboxService {
         var updated: [String] = []
     }
 
-    /// Brings the album's `DropboxFile` records up to date with the folder.
-    /// First run lists everything; later runs use the saved cursor so only
-    /// changes come back. Only files directly in the folder are included.
+    /// Brings the album's `DropboxFile` records up to date with the folder
+    /// and all its subfolders. First run lists everything; later runs use the
+    /// saved cursor so only changes come back.
     @discardableResult
     func checkForChanges(_ album: ConnectedAlbum, context: ModelContext) async throws -> ChangeSummary {
         let albumID = album.externalID
         var summary = ChangeSummary()
         // Folder ID is stable across renames/moves; refresh its current path.
-        if let path = try await folderPathLower(album) { album.folderPathLower = path }
+        let root = try await client.files.getMetadata(path: albumID).response()
+        if let lower = root.pathLower { album.folderPathLower = lower }
+        let rootDepth = Self.components(root.pathDisplay ?? root.pathLower ?? "").count
+
         var existing = Dictionary(
             ((try? context.fetch(FetchDescriptor<DropboxFile>(
                 predicate: #Predicate { $0.albumID == albumID }))) ?? []).map { ($0.fileID, $0) },
             uniquingKeysWith: { a, _ in a })
+
+        // Albums listed before subfolder support need one full recursive listing.
+        if !album.isRecursive { album.listCursor = nil }
 
         var isFullListing = album.listCursor == nil
         var result: Files.ListFolderResult
@@ -100,32 +106,36 @@ final class DropboxService {
                 result = try await client.files.listFolderContinue(cursor: cursor).response()
             } catch {
                 // Expired/reset cursor: fall back to a full listing.
-                result = try await client.files.listFolder(path: albumID, includeDeleted: true).response()
+                result = try await client.files.listFolder(path: albumID, recursive: true, includeDeleted: true).response()
                 isFullListing = true
             }
         } else {
-            result = try await client.files.listFolder(path: albumID, includeDeleted: true).response()
+            result = try await client.files.listFolder(path: albumID, recursive: true, includeDeleted: true).response()
         }
 
         var seen = Set<String>()
+        var deletedPaths: [String] = []
         var newFiles: [(fileID: String, pathLower: String)] = []
         while true {
             for entry in result.entries {
                 if let file = entry as? Files.FileMetadata {
                     // Not an image (or renamed to a non-image): treat as gone.
-                    guard Self.isImage(file), Self.isDirectChild(file, of: album) else {
+                    guard Self.isImage(file) else {
                         if let gone = existing.removeValue(forKey: file.id) {
                             remove(gone, context: context, summary: &summary)
                         }
                         continue
                     }
                     seen.insert(file.id)
+                    let folder = Self.relativeFolder(of: file.pathDisplay ?? file.pathLower ?? "", rootDepth: rootDepth)
                     if let record = existing[file.id] {
                         let changed = record.contentHash != file.contentHash
                         record.name = file.name
                         record.size = Int64(file.size)
                         record.serverModified = file.serverModified
                         record.clientModified = file.clientModified
+                        record.pathLower = file.pathLower
+                        record.folderPath = folder
                         if changed {
                             record.contentHash = file.contentHash
                             summary.updated.append(file.id)
@@ -135,22 +145,30 @@ final class DropboxService {
                             fileID: file.id, albumID: albumID, name: file.name, size: Int64(file.size),
                             serverModified: file.serverModified, clientModified: file.clientModified,
                             contentHash: file.contentHash)
+                        record.pathLower = file.pathLower
+                        record.folderPath = folder
                         context.insert(record)
                         existing[file.id] = record
                         summary.added.append(file.id)
                         if let lower = file.pathLower { newFiles.append((file.id, lower)) }
                     }
-                } else if entry is Files.DeletedMetadata {
-                    // Deleted entries carry no ID; match by lowercased path.
-                    if let lower = entry.pathLower,
-                       let gone = existing.values.first(where: { Self.pathLower(of: $0, in: album) == lower }) {
-                        existing.removeValue(forKey: gone.fileID)
-                        remove(gone, context: context, summary: &summary)
-                    }
+                } else if entry is Files.DeletedMetadata, let lower = entry.pathLower {
+                    // A deleted file, or a deleted/moved-away folder. Applied
+                    // after the batch so a rename (delete + re-add) keeps files.
+                    deletedPaths.append(lower)
                 }
             }
             guard result.hasMore else { break }
             result = try await client.files.listFolderContinue(cursor: result.cursor).response()
+        }
+
+        // Deleted entries carry no ID: match by path, including whole folders.
+        for (id, record) in existing where !seen.contains(id) {
+            guard let path = record.pathLower else { continue }
+            if deletedPaths.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
+                existing.removeValue(forKey: id)
+                remove(record, context: context, summary: &summary)
+            }
         }
 
         // A full listing is authoritative: anything not seen is gone.
@@ -161,6 +179,7 @@ final class DropboxService {
         }
 
         album.listCursor = result.cursor
+        album.isRecursive = true
         try? context.save()
         // Ratings set on another device come in as tags on new files.
         await DropboxSyncEngine.shared.importTags(for: newFiles, context: context)
@@ -169,27 +188,23 @@ final class DropboxService {
         return summary
     }
 
+    private static func components(_ path: String) -> [String] {
+        path.split(separator: "/").map(String.init)
+    }
+
+    /// "/Photos/Trip/Day 1/img.jpg" with root "/Photos/Trip" -> "Day 1".
+    static func relativeFolder(of filePath: String, rootDepth: Int) -> String {
+        let parts = components(filePath)
+        guard parts.count > rootDepth + 1 else { return "" }
+        return parts[rootDepth..<(parts.count - 1)].joined(separator: "/")
+    }
+
     /// Removes a file that left the folder. Its rating stays in `PhotoState`.
     /// Only the app's own downloaded copy is deleted; Dropbox is untouched.
     private func remove(_ record: DropboxFile, context: ModelContext, summary: inout ChangeSummary) {
-        OfflineStore.removeLocalCopy(record.fileID)
+        OfflineStore.removeLocalCopyIfUnused(record.fileID, leaving: record.albumID, context: context)
         summary.removed.append(record.fileID)
         context.delete(record)
-    }
-
-    private static func isDirectChild(_ file: Files.FileMetadata, of album: ConnectedAlbum) -> Bool {
-        guard let folder = album.folderPathLower, let path = file.pathLower else { return true }
-        return (path as NSString).deletingLastPathComponent == folder
-    }
-
-    private static func pathLower(of record: DropboxFile, in album: ConnectedAlbum) -> String? {
-        guard let folder = album.folderPathLower else { return nil }
-        return (folder as NSString).appendingPathComponent(record.name.lowercased())
-    }
-
-    private func folderPathLower(_ album: ConnectedAlbum) async throws -> String? {
-        let metadata = try await client.files.getMetadata(path: album.externalID).response()
-        return metadata.pathLower
     }
 
     // MARK: Thumbnails (online-only photos)

@@ -124,7 +124,7 @@ final class OfflineDownloadManager: ObservableObject {
     func removeDownloads(_ album: ConnectedAlbum) {
         pause(album)
         for file in files(of: album) {
-            OfflineStore.removeLocalCopy(file.fileID)
+            if let context { OfflineStore.removeLocalCopyIfUnused(file.fileID, leaving: album.externalID, context: context) }
             file.localFileName = nil
             file.localQualityRaw = nil
             file.localSize = 0

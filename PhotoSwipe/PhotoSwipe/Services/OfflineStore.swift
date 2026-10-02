@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import CryptoKit
 
 /// Where downloaded Dropbox photos live: Application Support (never Caches,
@@ -50,5 +51,18 @@ enum OfflineStore {
     /// Removes the app's own downloaded copy. Never touches Dropbox.
     static func removeLocalCopy(_ fileID: String) {
         try? FileManager.default.removeItem(at: localURL(for: fileID))
+    }
+
+    /// Removes the local copy unless another connected album that is kept
+    /// offline (or downloading) also contains this file, e.g. a subfolder
+    /// connected on its own as well as through its parent.
+    @MainActor
+    static func removeLocalCopyIfUnused(_ fileID: String, leaving albumID: String, context: ModelContext) {
+        let others = (try? context.fetch(FetchDescriptor<DropboxFile>(
+            predicate: #Predicate { $0.fileID == fileID && $0.albumID != albumID }))) ?? []
+        let offlineAlbums = Set(((try? context.fetch(FetchDescriptor<ConnectedAlbum>())) ?? [])
+            .filter { $0.offlineState != .onlineOnly }.map(\.externalID))
+        if others.contains(where: { offlineAlbums.contains($0.albumID) }) { return }
+        removeLocalCopy(fileID)
     }
 }

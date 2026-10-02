@@ -10,6 +10,8 @@ struct PhotoItem: Identifiable, Hashable {
     let date: Date?
     /// Apple Photos only.
     let asset: PHAsset?
+    /// Dropbox only: subfolder inside the album ("" = top level).
+    var folder: String = ""
 
     init(asset: PHAsset) {
         id = asset.localIdentifier
@@ -18,11 +20,18 @@ struct PhotoItem: Identifiable, Hashable {
         self.asset = asset
     }
 
-    init(dropboxFileID: String, date: Date?) {
+    init(dropboxFileID: String, date: Date?, folder: String = "") {
         id = dropboxFileID
         source = .dropbox
         self.date = date
         asset = nil
+        self.folder = folder
+    }
+
+    /// True if the photo is in `scope` or any folder below it (nil = whole album).
+    func isInFolder(_ scope: String?) -> Bool {
+        guard let scope, !scope.isEmpty else { return true }
+        return folder == scope || folder.hasPrefix(scope + "/")
     }
 
     static func == (a: PhotoItem, b: PhotoItem) -> Bool { a.id == b.id && a.source == b.source }

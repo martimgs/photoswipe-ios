@@ -17,6 +17,14 @@ final class AlbumSessionViewModel: ObservableObject {
     }
 
     let album: ConnectedAlbum
+    /// Subfolder this session is limited to (Dropbox), nil = whole album.
+    let folder: String?
+
+    /// Header title: the subfolder's name, or the album's.
+    var title: String {
+        guard let folder, let last = folder.split(separator: "/").last else { return album.name }
+        return String(last)
+    }
 
     @Published private(set) var phase: Phase = .loading
     /// Every photo in the album, in album order.
@@ -32,8 +40,9 @@ final class AlbumSessionViewModel: ObservableObject {
     private var context: ModelContext?
     private var backend: RatingBackend?
 
-    init(album: ConnectedAlbum) {
+    init(album: ConnectedAlbum, folder: String? = nil) {
         self.album = album
+        self.folder = folder
     }
 
     // MARK: Derived
@@ -85,6 +94,7 @@ final class AlbumSessionViewModel: ObservableObject {
             backend = ApplePhotosRatingBackend(context: context)
         case .dropbox:
             photos = Self.dropboxItems(albumID: album.externalID, context: context)
+                .filter { $0.isInFolder(folder) }
             backend = DropboxRatingBackend(context: context, albumID: album.externalID)
         }
         reloadState()
@@ -104,6 +114,7 @@ final class AlbumSessionViewModel: ObservableObject {
     func reloadPhotos() {
         guard let context, album.source == .dropbox else { return }
         photos = Self.dropboxItems(albumID: album.externalID, context: context)
+            .filter { $0.isInFolder(folder) }
         reloadState()
         if currentID == nil || !photos.contains(where: { $0.id == currentID }) {
             currentID = deck.first?.id
@@ -120,9 +131,16 @@ final class AlbumSessionViewModel: ObservableObject {
     static func dropboxItems(albumID: String, context: ModelContext) -> [PhotoItem] {
         let files = (try? context.fetch(FetchDescriptor<DropboxFile>(
             predicate: #Predicate { $0.albumID == albumID }))) ?? []
+        // Grouped by subfolder (top level first, then folders A–Z), then by date.
         return files
-            .sorted { ($0.date ?? .distantPast, $0.name) < ($1.date ?? .distantPast, $1.name) }
-            .map { PhotoItem(dropboxFileID: $0.fileID, date: $0.date) }
+            .sorted { a, b in
+                if a.folderPath != b.folderPath {
+                    if a.folderPath.isEmpty || b.folderPath.isEmpty { return a.folderPath.isEmpty }
+                    return a.folderPath.localizedStandardCompare(b.folderPath) == .orderedAscending
+                }
+                return (a.date ?? .distantPast, a.name) < (b.date ?? .distantPast, b.name)
+            }
+            .map { PhotoItem(dropboxFileID: $0.fileID, date: $0.date, folder: $0.folderPath) }
     }
 
     // MARK: Navigation

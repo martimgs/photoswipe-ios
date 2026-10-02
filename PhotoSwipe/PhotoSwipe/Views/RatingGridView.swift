@@ -114,7 +114,7 @@ struct RatingGridView: View {
     private var header: some View {
         ZStack {
             VStack(spacing: 3) {
-                Text(vm.album.name)
+                Text(vm.title)
                     .font(.system(size: 16))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
