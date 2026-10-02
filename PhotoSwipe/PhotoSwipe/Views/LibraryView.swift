@@ -17,7 +17,8 @@ struct LibraryView: View {
         NavigationStack {
             List {
                 header
-                    .listRowInsets(EdgeInsets(top: 8, leading: 20, bottom: 18, trailing: 20))
+                    .listRowInsets(EdgeInsets(top: Spacing.xs, leading: Spacing.margin,
+                                              bottom: Spacing.l, trailing: Spacing.margin))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Theme.paper)
 
@@ -43,13 +44,15 @@ struct LibraryView: View {
                         }
                     }
                 }
-                .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+                .listRowInsets(EdgeInsets(top: Spacing.xs, leading: Spacing.margin,
+                                          bottom: Spacing.xs, trailing: Spacing.margin))
                 .listRowSeparator(.hidden)
                 .listRowBackground(Theme.paper)
 
                 Button { Haptics.tap(); showConnect = true } label: { connectRow }
                     .buttonStyle(.plain)
-                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
+                    .listRowInsets(EdgeInsets(top: Spacing.l, leading: Spacing.margin,
+                                              bottom: Spacing.xs, trailing: Spacing.margin))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Theme.paper)
             }
@@ -58,6 +61,7 @@ struct LibraryView: View {
             .frame(maxWidth: Theme.readableWidth)
             .frame(maxWidth: .infinity)
             .background(Theme.paper)
+            .navigationTitle("My Photos")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AlbumRoute.self) { route in
                 AlbumScreen(route: route)
@@ -73,42 +77,32 @@ struct LibraryView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .firstTextBaseline) {
             Text("My Photos")
-                .font(.system(size: 34, weight: .regular))
+                .font(.screenTitle)
                 .foregroundStyle(Theme.ink)
+                .accessibilityAddTraits(.isHeader)
             Spacer()
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 21, weight: .regular))
+                    .font(.title3.weight(.light))
                     .foregroundStyle(Theme.ink)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
+            .padding(.trailing, -Spacing.xs)   // glyph lines up with the row chevrons
             .accessibilityLabel("Settings")
         }
     }
 
+    /// A secondary action, not another album.
     private var connectRow: some View {
-        HStack(spacing: 18) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.surface)
-                .frame(width: 88, height: 88)
-                .overlay(Image(systemName: "plus").font(.system(size: 26, weight: .light)))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Connect Album")
-                    .font(.system(size: 17))
-                Text("Add from Apple Photos or Dropbox")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.inkSecondary)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(Theme.inkSecondary)
-        }
-        .foregroundStyle(Theme.ink)
-        .contentShape(Rectangle())
+        Label("Connect Album", systemImage: "plus")
+            .font(.metadata)
+            .foregroundStyle(Theme.inkSecondary)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+            .accessibilityHint("Add from Apple Photos or Dropbox")
     }
 
     // MARK: Subfolders
@@ -172,36 +166,34 @@ struct AlbumRow: View {
     @Environment(\.modelContext) private var context
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: Spacing.m) {
             Group {
                 if let cover = info?.cover {
-                    Thumbnail(item: cover, side: 88, cornerRadius: 8)
+                    Thumbnail(item: cover, side: Thumbnail.album)
                 } else {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.thumbnail, style: .continuous)
                         .fill(Theme.surface)
-                        .frame(width: 88, height: 88)
+                        .frame(width: Thumbnail.album, height: Thumbnail.album)
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(info?.name ?? album.name)
-                    .font(.system(size: 17))
+                    .font(.rowTitle)
                     .foregroundStyle(Theme.ink)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(subtitle)
-                    if folderCount > 0 {
-                        FolderToggle(count: folderCount, isExpanded: isExpanded, action: onToggleFolders)
-                    }
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.metadata)
+                    .foregroundStyle(Theme.inkSecondary)
+                if folderCount > 0 {
+                    FolderToggle(count: folderCount, isExpanded: isExpanded, action: onToggleFolders)
                 }
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.inkSecondary)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Spacing.xs)
             if album.source == .dropbox {
                 // Album-level offline/sync control.
-                AlbumStatusButton(album: album, size: 20)
+                AlbumStatusButton(album: album)
             }
         }
-        .padding(.vertical, 2)
         // Re-read after each Dropbox "check for changes".
         .task(id: "\(album.externalID)|\(album.lastCheckedAt?.timeIntervalSince1970 ?? 0)") {
             info = AlbumInfo.load(album, context: context)
@@ -251,15 +243,16 @@ struct FolderToggle: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 3) {
+            HStack(spacing: Spacing.xxs) {
                 Text("\(count) folder\(count == 1 ? "" : "s")")
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.caption2.weight(.medium))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }
-            .foregroundStyle(Theme.ink)
-            .padding(.vertical, 6)
+            .font(.smallMetadata)
+            .foregroundStyle(Theme.inkSecondary)
+            .padding(.vertical, Spacing.xxs)
             .contentShape(Rectangle())
             .fixedSize()
         }
@@ -278,33 +271,33 @@ struct FolderRow: View {
     let onToggle: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Spacing.s) {
             Group {
                 if let cover = node.cover {
-                    Thumbnail(item: cover, side: 52, cornerRadius: 6)
+                    Thumbnail(item: cover, side: Thumbnail.folder)
                 } else {
-                    RoundedRectangle(cornerRadius: 6).fill(Theme.surface).frame(width: 52, height: 52)
+                    RoundedRectangle(cornerRadius: Radius.thumbnail, style: .continuous)
+                        .fill(Theme.surface)
+                        .frame(width: Thumbnail.folder, height: Thumbnail.folder)
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Label(node.name, systemImage: "folder")
-                    .labelStyle(.titleAndIcon)
-                    .font(.system(size: 16))
+                Text(node.name)
+                    .font(.metadata)
                     .foregroundStyle(Theme.ink)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(node.count == 1 ? "1 photo" : "\(node.count.formatted()) photos")
-                    if !node.children.isEmpty {
-                        FolderToggle(count: node.children.count, isExpanded: isExpanded, action: onToggle)
-                    }
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(node.count == 1 ? "1 photo" : "\(node.count.formatted()) photos")
+                    .font(.smallMetadata)
+                    .foregroundStyle(Theme.inkSecondary)
+                if !node.children.isEmpty {
+                    FolderToggle(count: node.children.count, isExpanded: isExpanded, action: onToggle)
                 }
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.inkSecondary)
             }
             Spacer(minLength: 0)
             // Keep just this folder (and its subfolders) offline.
-            AlbumStatusButton(album: album, folder: node.path, size: 18)
+            AlbumStatusButton(album: album, folder: node.path)
         }
-        .padding(.leading, CGFloat(depth) * 28)
-        .padding(.vertical, 1)
+        .padding(.leading, CGFloat(depth) * Spacing.l)
     }
 }

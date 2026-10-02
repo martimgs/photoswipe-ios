@@ -23,7 +23,7 @@ struct ConnectAlbumSheet: View {
                         sourceRow("shippingbox", "Dropbox", "Folders in your Dropbox")
                     }
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.paper)
@@ -41,11 +41,11 @@ struct ConnectAlbumSheet: View {
     private func sourceRow(_ icon: String, _ title: String, _ subtitle: String) -> some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .light))
+                .font(.title3.weight(.light))
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 17))
-                Text(subtitle).font(.system(size: 13)).foregroundStyle(Theme.inkSecondary)
+                Text(title).font(.rowTitle)
+                Text(subtitle).font(.smallMetadata).foregroundStyle(Theme.inkSecondary)
             }
         }
         .foregroundStyle(Theme.ink)
@@ -68,7 +68,7 @@ private struct AppleAlbumPicker: View {
         List {
             if loaded && albums.isEmpty {
                 Text("No albums found. Create an album in the Photos app, then come back.")
-                    .font(.system(size: 15))
+                    .font(.metadata)
                     .foregroundStyle(Theme.inkSecondary)
                     .listRowBackground(Color.clear)
             }
@@ -78,7 +78,7 @@ private struct AppleAlbumPicker: View {
                     PickerAlbumRow(album: album, isConnected: isConnected)
                 }
                 .disabled(isConnected)
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
             }
         }
         .scrollContentBackground(.hidden)
@@ -116,21 +116,21 @@ private struct PickerAlbumRow: View {
         HStack(spacing: 14) {
             Group {
                 if let cover {
-                    Thumbnail(item: cover, side: 52, cornerRadius: 6)
+                    Thumbnail(item: cover, side: Thumbnail.folder)
                 } else {
-                    RoundedRectangle(cornerRadius: 6).fill(Theme.surface).frame(width: 52, height: 52)
+                    RoundedRectangle(cornerRadius: Radius.thumbnail, style: .continuous).fill(Theme.surface).frame(width: Thumbnail.folder, height: Thumbnail.folder)
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(album.localizedTitle ?? "Untitled").font(.system(size: 17))
+                Text(album.localizedTitle ?? "Untitled").font(.rowTitle)
                 Text(count == 1 ? "1 photo" : "\(count.formatted()) photos")
-                    .font(.system(size: 13))
+                    .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
             }
             Spacer()
             if isConnected {
                 Text("Connected")
-                    .font(.system(size: 13))
+                    .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
             }
         }

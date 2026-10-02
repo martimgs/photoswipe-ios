@@ -15,7 +15,7 @@ struct FilmstripView: View {
     /// True from touch-down until the strip comes to rest after a flick.
     var onScrubbingChanged: (Bool) -> Void = { _ in }
 
-    static let height: CGFloat = 44
+    static let height: CGFloat = 50
     private let sliver: CGFloat = 22
     private let gap: CGFloat = 2
     private var step: CGFloat { sliver + gap }
@@ -43,7 +43,7 @@ struct FilmstripView: View {
                     Thumbnail(item: photos[i], side: Self.height, cornerRadius: 0)
                         .frame(width: slot.width, height: Self.height)
                         .clipped()
-                        .overlay(Rectangle().strokeBorder(Theme.ink, lineWidth: i == center ? 2 : 0))
+                        .overlay(Rectangle().strokeBorder(Theme.ink, lineWidth: i == center ? 1.5 : 0))
                         .position(x: mid + slot.x, y: Self.height / 2)
                 }
             }

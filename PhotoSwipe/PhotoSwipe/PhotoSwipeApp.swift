@@ -25,7 +25,6 @@ struct PhotoSwipeApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .preferredColorScheme(.light)
                 .environmentObject(dropbox)
                 .environmentObject(sync)
                 .onOpenURL { dropbox.handle($0) }

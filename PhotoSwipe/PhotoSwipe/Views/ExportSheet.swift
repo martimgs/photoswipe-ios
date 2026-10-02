@@ -99,27 +99,27 @@ struct ExportSheet: View {
                     .progressViewStyle(.circular)
                     .controlSize(.large)
                 Text("Saving \(total) photo\(total == 1 ? "" : "s")…")
-                    .font(.system(size: 17))
-                Text(folder).font(.system(size: 13)).foregroundStyle(Theme.inkSecondary)
+                    .font(.rowTitle)
+                Text(folder).font(.smallMetadata).foregroundStyle(Theme.inkSecondary)
                     .multilineTextAlignment(.center)
             case .finished(let result, let folder):
-                Image(systemName: "checkmark.circle").font(.system(size: 44, weight: .light))
+                Image(systemName: "checkmark.circle").font(.largeTitle.weight(.ultraLight))
                 Text("Saved \(result.exported) photo\(result.exported == 1 ? "" : "s")")
-                    .font(.system(size: 20))
-                Text(folder).font(.system(size: 13)).foregroundStyle(Theme.inkSecondary)
+                    .font(.title3)
+                Text(folder).font(.smallMetadata).foregroundStyle(Theme.inkSecondary)
                     .multilineTextAlignment(.center)
                 if result.failed > 0 {
-                    Text("\(result.failed) couldn't be saved.").font(.system(size: 14)).foregroundStyle(Theme.inkSecondary)
+                    Text("\(result.failed) couldn't be saved.").font(.metadata).foregroundStyle(Theme.inkSecondary)
                 }
                 doneButton("Done")
             case .failed(let message):
-                Image(systemName: "exclamationmark.triangle").font(.system(size: 40, weight: .light))
-                Text("Export failed").font(.system(size: 20))
-                Text(message).font(.system(size: 14)).foregroundStyle(Theme.inkSecondary)
+                Image(systemName: "exclamationmark.triangle").font(.largeTitle.weight(.ultraLight))
+                Text("Export failed").font(.title3)
+                Text(message).font(.metadata).foregroundStyle(Theme.inkSecondary)
                     .multilineTextAlignment(.center)
                 HStack(spacing: 12) {
                     Button("Back") { phase = .choosing }
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.body.weight(.medium))
                     doneButton("Close")
                 }
             }
@@ -132,7 +132,7 @@ struct ExportSheet: View {
 
     private func doneButton(_ title: String) -> some View {
         Button(title) { dismiss() }
-            .font(.system(size: 16, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(Theme.paper)
             .padding(.horizontal, 22).padding(.vertical, 12)
             .background(Theme.ink, in: Capsule())
@@ -165,17 +165,17 @@ private struct ExportFolderLevel: View {
     var body: some View {
         List {
             if let error {
-                Text(error).font(.system(size: 15)).foregroundStyle(Theme.inkSecondary)
+                Text(error).font(.metadata).foregroundStyle(Theme.inkSecondary)
                     .listRowBackground(Color.clear)
             } else if loaded && subfolders.isEmpty {
-                Text("No subfolders").font(.system(size: 15)).foregroundStyle(Theme.inkSecondary)
+                Text("No subfolders").font(.metadata).foregroundStyle(Theme.inkSecondary)
                     .listRowBackground(Color.clear)
             }
             ForEach(subfolders) { sub in
                 NavigationLink(value: sub.pathDisplay) {
                     Label(sub.name, systemImage: "folder").foregroundStyle(Theme.ink)
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
             }
         }
         .overlay { if !loaded { ProgressView() } }
@@ -197,11 +197,11 @@ private struct ExportFolderLevel: View {
         .safeAreaInset(edge: .bottom) {
             Button { onSave(path) } label: {
                 Text("Save \(count) Photo\(count == 1 ? "" : "s") Here")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.body.weight(.medium))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .foregroundStyle(Theme.paper)
-                    .background(Theme.ink, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(Theme.ink, in: Capsule())
             }
             .disabled(path.isEmpty || count == 0)
             .opacity(path.isEmpty ? 0.4 : 1)

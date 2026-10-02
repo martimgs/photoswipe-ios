@@ -9,7 +9,8 @@ private struct CardSizeKey: PreferenceKey {
     }
 }
 
-/// The rating screen: header, photo card, star row, filmstrip, X / heart.
+/// The rating screen: photo card, star row, filmstrip, X / heart, under a
+/// native navigation bar (album name, "12 of 179", "…" menu).
 /// Right = +1 star, left = −1 star, up = pick (5 stars), down = reject.
 /// Each gesture applies to the current photo, then advances.
 struct SwipeDeckView: View {
@@ -22,7 +23,6 @@ struct SwipeDeckView: View {
     @State private var cardPixelSide: CGFloat = 0
     /// Finger on the filmstrip (or its momentum): cards switch without animation.
     @State private var scrubbing = false
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
@@ -36,7 +36,10 @@ struct SwipeDeckView: View {
             }
         }
         .background(Theme.paper.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationSubtitle(subtitle)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { menu }
+        }
         .fullScreenCover(item: $fullScreen) { FullScreenPhotoView(item: $0) }
         .onPreferenceChange(CardSizeKey.self) { side in
             if side > 0 { cardPixelSide = side * displayScale }
@@ -78,19 +81,22 @@ struct SwipeDeckView: View {
 
     private var portrait: some View {
         VStack(spacing: 0) {
-            header
             if let current = vm.current {
+                // Fixed area; the photo fits inside it, so everything below
+                // stays put between portrait and landscape photos.
                 card(current)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 8)
-                StarRatingView(rating: vm.rating(of: current)) { vm.setRating($0) }
-                    .padding(.top, 18)
+                    .padding(.horizontal, Spacing.margin)
+                    .padding(.top, Spacing.xs)
+                RatingControl(rating: vm.rating(of: current)) { vm.setRating($0) }
+                    .padding(.top, Spacing.m)
             } else {
                 endState
             }
             filmstrip
-                .padding(.top, 14)
+                .padding(.top, Spacing.s)
             actionBar
+                .padding(.top, Spacing.m)
+                .padding(.bottom, Spacing.xs)
         }
         .frame(maxWidth: Theme.readableWidth)
         .frame(maxWidth: .infinity)
@@ -98,7 +104,7 @@ struct SwipeDeckView: View {
 
     private var landscape: some View {
         HStack(spacing: 0) {
-            VStack(spacing: 8) {
+            VStack(spacing: Spacing.xs) {
                 if let current = vm.current {
                     card(current)
                 } else {
@@ -106,57 +112,26 @@ struct SwipeDeckView: View {
                 }
                 filmstrip
             }
-            .padding(.vertical, 10)
-            .padding(.leading, 16)
-            VStack(spacing: 14) {
-                header
+            .padding(.vertical, Spacing.xs)
+            .padding(.leading, Spacing.m)
+            VStack(spacing: Spacing.l) {
                 Spacer(minLength: 0)
                 if let current = vm.current {
-                    StarRatingView(rating: vm.rating(of: current), size: 22, spacing: 6) { vm.setRating($0) }
+                    RatingControl(rating: vm.rating(of: current)) { vm.setRating($0) }
                 }
                 actionBar
                 Spacer(minLength: 0)
             }
             .frame(width: 280)
-            .padding(.vertical, 8)
         }
     }
 
     // MARK: Header
 
-    private var header: some View {
-        ZStack {
-            VStack(spacing: 3) {
-                Text(vm.title)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.inkSecondary)
-                    .monospacedDigit()
-            }
-            .padding(.horizontal, 60)
-            HStack {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 19, weight: .regular))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Back")
-                Spacer()
-                menu
-            }
-            .foregroundStyle(Theme.ink)
-            .padding(.horizontal, 8)
-        }
-        .padding(.vertical, 6)
-    }
-
     private var subtitle: String {
         let total = vm.deck.count
         let base = vm.position.map { "\($0) of \(total)" } ?? "\(total) photos"
-        return vm.minRating == 0 ? base : "\(base) • \(RatingFilter.label(vm.minRating))"
+        return vm.minRating == 0 ? base : "\(base) · \(RatingFilter.label(vm.minRating))"
     }
 
     private var menu: some View {
@@ -168,11 +143,8 @@ struct SwipeDeckView: View {
             Button { onOpenGrid() } label: { Label("Review in Grid", systemImage: "square.grid.2x2") }
             Button { vm.startOver() } label: { Label("Back to First Photo", systemImage: "arrow.counterclockwise") }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 19, weight: .regular))
-                .frame(width: 44, height: 44)
+            Label("More", systemImage: "ellipsis")
         }
-        .accessibilityLabel("More")
         .onChange(of: vm.minRating) { vm.filterChanged() }
     }
 
@@ -180,14 +152,6 @@ struct SwipeDeckView: View {
 
     private func card(_ current: PhotoItem) -> some View {
         ZStack {
-            if !scrubbing, let next = vm.next {
-                PhotoCardView(item: next)
-                    .scaleEffect(0.95)
-                    .rotationEffect(.degrees(-3))
-                    .offset(x: -8, y: 6)
-                    .opacity(0.9)
-                    .id("next-" + next.id)
-            }
             PhotoCardView(item: current, intent: intent, intentStrength: strength)
                 .id(current.id)
                 .offset(drag)
@@ -196,7 +160,7 @@ struct SwipeDeckView: View {
                 .onTapGesture { fullScreen = current }
                 .gesture(dragGesture)
                 .accessibilityAction(named: "View Full Screen") { fullScreen = current }
-                .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity),
+                .transition(.asymmetric(insertion: .scale(scale: 0.98).combined(with: .opacity),
                                         removal: .opacity))
         }
         .animation(scrubbing ? nil : .cardSpring, value: vm.currentID)
@@ -271,7 +235,7 @@ struct SwipeDeckView: View {
                 .buttonStyle(.plain)
                 .accessibilityHint("Raises the rating filter to \(RatingFilter.label(vm.minRating + 1))")
                 Button("Review in Grid") { onOpenGrid() }
-                    .font(.system(size: 15))
+                    .font(.metadata)
                     .foregroundStyle(Theme.inkSecondary)
             }
             Spacer()
@@ -282,38 +246,21 @@ struct SwipeDeckView: View {
     // MARK: Action bar
 
     private var actionBar: some View {
-        HStack {
-            circleButton("xmark", label: "Reject") { reject() }
-            Spacer()
+        HStack(spacing: Spacing.xxl) {
+            RoundIconButton(systemImage: "xmark", label: "Reject") { reject() }
             Button { withAnimation(.cardSpring) { drag = .zero }; vm.undo() } label: {
                 Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 17, weight: .regular))
+                    .font(.body.weight(.light))
                     .foregroundStyle(Theme.inkSecondary)
                     .frame(width: 44, height: 44)
             }
             .opacity(vm.canUndo ? 1 : 0)
             .disabled(!vm.canUndo)
             .accessibilityLabel("Undo")
-            Spacer()
-            circleButton("heart", label: "Pick") { pick() }
+            RoundIconButton(systemImage: "heart", label: "Pick") { pick() }
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 10)
-        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity)
         .disabled(vm.current == nil)
-    }
-
-    private func circleButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .light))
-                .foregroundStyle(Theme.ink)
-                .frame(width: 62, height: 62)
-                .background(Circle().fill(Color.white.opacity(0.75)))
-                .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
-        }
-        .buttonStyle(PressableStyle(scale: 0.9))
-        .accessibilityLabel(label)
     }
 
     // MARK: Fling

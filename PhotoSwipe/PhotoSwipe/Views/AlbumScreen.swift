@@ -30,7 +30,7 @@ struct AlbumScreen: View {
                 Theme.paper
             case .unavailable:
                 MessageView(icon: "questionmark.folder", title: "Album unavailable",
-                            message: "This album no longer exists in Photos. You can disconnect it from My Photos.")
+                            message: "This album no longer exists in Photos. You can disconnect it from Albums.")
             case .empty:
                 MessageView(icon: "photo", title: "No photos",
                             message: "This album has no photos yet.")
@@ -40,6 +40,9 @@ struct AlbumScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.paper.ignoresSafeArea())
+        .navigationTitle(vm.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarRole(.editor)   // back button shows the chevron only
         .navigationDestination(isPresented: $showGrid) {
             RatingGridView(vm: vm)
         }

@@ -44,19 +44,19 @@ struct MessageView: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 40, weight: .light))
+                .font(.largeTitle.weight(.ultraLight))
                 .foregroundStyle(Theme.inkSecondary)
             Text(title)
-                .font(.system(size: 22, weight: .regular))
+                .font(.title3)
                 .foregroundStyle(Theme.ink)
             Text(message)
-                .font(.system(size: 15))
+                .font(.metadata)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.inkSecondary)
                 .padding(.horizontal, 40)
             if let button, let action {
                 Button(button) { Haptics.tap(); action() }
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.body.weight(.medium))
                     .foregroundStyle(Theme.paper)
                     .padding(.horizontal, 22).padding(.vertical, 12)
                     .background(Theme.ink, in: Capsule())

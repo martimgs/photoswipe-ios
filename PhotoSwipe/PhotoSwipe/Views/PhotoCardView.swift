@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What a drag is about to do, shown as a large white overlay on the card.
+/// What a drag is about to do, shown as a white symbol over the dimmed card.
 enum SwipeIntent: Equatable {
     case up, down, pick, reject
 
@@ -67,8 +67,7 @@ struct PhotoCardView: View {
                 }
             }
             .frame(width: fitted.width, height: fitted.height)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
-            .shadow(color: .black.opacity(0.12), radius: 18, y: 10)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.photo, style: .continuous))
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(.easeOut(duration: 0.2), value: ratio)
             .task(id: item.id) { await loadImage(fitting: geo.size) }
@@ -83,14 +82,13 @@ struct PhotoCardView: View {
         let o = min(max(intentStrength, 0), 1)
         return ZStack {
             Color.black.opacity(0.18 * o)
-            VStack(spacing: 6) {
+            VStack(spacing: Spacing.xs) {
                 Image(systemName: intent.symbol)
-                    .font(.system(size: 72, weight: .regular))
+                    .font(.system(size: 56, weight: .light))
                 Text(intent.caption)
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.headline.weight(.regular))
             }
             .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.35), radius: 10)
             .scaleEffect(0.8 + 0.2 * o)
         }
         .opacity(o)

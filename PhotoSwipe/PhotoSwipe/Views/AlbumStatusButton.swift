@@ -11,7 +11,7 @@ struct AlbumStatusButton: View {
     let album: ConnectedAlbum
     /// A subfolder of the album, or nil for the whole album.
     var folder: String? = nil
-    var size: CGFloat = 21
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 17
     @ObservedObject private var downloads = OfflineDownloadManager.shared
     @ObservedObject private var sync = DropboxSyncEngine.shared
     @ObservedObject private var connectivity = Connectivity.shared
@@ -123,7 +123,8 @@ struct AlbumStatusButton: View {
     }
 }
 
-/// The status icon on its own.
+/// The status icon on its own: small, light and secondary, so it never
+/// competes with the album's name or cover.
 struct AlbumStatusIcon: View {
     let status: OfflineDownloadManager.Status
     var size: CGFloat = 15
@@ -131,27 +132,27 @@ struct AlbumStatusIcon: View {
     var body: some View {
         switch status {
         case .onlineOnly:
-            Image(systemName: "arrow.down.circle").font(.system(size: size, weight: .regular))
-                .foregroundStyle(Theme.ink)
+            symbol("arrow.down.circle")
         case .downloading(let p), .paused(let p):
             ZStack {
-                Circle().stroke(Theme.hairline, lineWidth: 2)
+                Circle().stroke(Theme.hairline, lineWidth: 1.5)
                 Circle().trim(from: 0, to: max(p.fraction, 0.03))
-                    .stroke(Theme.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .stroke(Theme.inkSecondary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.snappy, value: p.fraction)
                 Image(systemName: isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: size * 0.45, weight: .bold))
-                    .foregroundStyle(Theme.ink)
+                    .font(.system(size: size * 0.4, weight: .regular))
+                    .foregroundStyle(Theme.inkSecondary)
             }
-            .frame(width: size * 1.25, height: size * 1.25)
+            .frame(width: size * 1.15, height: size * 1.15)
         case .pending(let count):
+            // Unsynced changes are worth noticing: ink, with a count.
             Image(systemName: "arrow.up.circle")
-                .font(.system(size: size, weight: .regular))
+                .font(.system(size: size, weight: .light))
                 .foregroundStyle(Theme.ink)
                 .overlay(alignment: .topTrailing) {
                     Text(count > 99 ? "99+" : "\(count)")
-                        .font(.system(size: max(size * 0.5, 9), weight: .bold))
+                        .font(.system(size: max(size * 0.5, 9), weight: .medium))
                         .monospacedDigit()
                         .foregroundStyle(Theme.paper)
                         .padding(.horizontal, 4).padding(.vertical, 1)
@@ -159,9 +160,14 @@ struct AlbumStatusIcon: View {
                         .offset(x: size * 0.55, y: -size * 0.45)
                 }
         case .offline:
-            Image(systemName: "checkmark.circle.fill").font(.system(size: size, weight: .regular))
-                .foregroundStyle(Theme.ink)
+            symbol("checkmark.circle")
         }
+    }
+
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: size, weight: .light))
+            .foregroundStyle(Theme.inkTertiary)
     }
 
     private var isPaused: Bool {

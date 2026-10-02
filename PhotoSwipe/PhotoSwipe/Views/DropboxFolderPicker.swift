@@ -51,9 +51,9 @@ private struct FolderLevel: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(isConnected ? "Connected" : "Connect “\(folder.name)”")
-                                    .font(.system(size: 17, weight: .medium))
+                                    .font(.body.weight(.medium))
                                 Text(countText)
-                                    .font(.system(size: 13))
+                                    .font(.smallMetadata)
                                     .foregroundStyle(Theme.inkSecondary)
                             }
                             Spacer()
@@ -69,15 +69,15 @@ private struct FolderLevel: View {
                 } footer: {
                     Text("Nothing is downloaded. Photos load from Dropbox while you're online until you make the album available offline.")
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
             }
 
             if let error {
-                Text(error).font(.system(size: 15)).foregroundStyle(Theme.inkSecondary)
+                Text(error).font(.metadata).foregroundStyle(Theme.inkSecondary)
                     .listRowBackground(Color.clear)
             } else if loaded && subfolders.isEmpty {
                 Text(folder == nil ? "No folders in your Dropbox." : "No subfolders.")
-                    .font(.system(size: 15)).foregroundStyle(Theme.inkSecondary)
+                    .font(.metadata).foregroundStyle(Theme.inkSecondary)
                     .listRowBackground(Color.clear)
             }
 
@@ -92,7 +92,7 @@ private struct FolderLevel: View {
                         }
                     }
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
             }
         }
         .overlay { if !loaded { ProgressView() } }

@@ -37,13 +37,6 @@ struct RatingGridView: View {
             }
         }
 
-        var icon: String {
-            switch self {
-            case .all: return "photo"
-            case .selected: return "star.fill"
-            case .rejected: return "eye.slash"
-            }
-        }
     }
 
     private var selectedMin: Int { vm.minRating }
@@ -77,39 +70,48 @@ struct RatingGridView: View {
 
     private var subtitle: String {
         let n = items.count
-        switch tab {
-        case .all: return n == 1 ? "1 photo" : "\(n) photos"
-        case .selected: return "\(n) selected • \(RatingFilter.label(selectedMin))"
-        case .rejected: return "\(n) rejected"
-        }
+        let count = n == 1 ? "1 photo" : "\(n.formatted()) photos"
+        return tab == .selected && selectedMin > 0 ? "\(count) · \(RatingFilter.label(selectedMin))" : count
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            GeometryReader { geo in
-                // 2 columns on iPhone; more on wider screens (~220 pt each).
-                let columns = max(2, Int((geo.size.width - 32 + 8) / (220 + 8)))
-                let side = (geo.size.width - 32 - 8 * CGFloat(columns - 1)) / CGFloat(columns)
-                ScrollView {
-                    if items.isEmpty {
-                        emptyState.frame(width: geo.size.width, height: geo.size.height * 0.8)
-                    } else {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: 8), count: columns),
-                                  spacing: 14) {
-                            ForEach(items) { asset in
-                                cell(asset, side: side)
-                            }
+        GeometryReader { geo in
+            // 2 columns on iPhone; more on wider screens (~220 pt each).
+            let gap = Spacing.xs
+            let inner = geo.size.width - 2 * Spacing.margin
+            let columns = max(2, Int((inner + gap) / (220 + gap)))
+            let side = (inner - gap * CGFloat(columns - 1)) / CGFloat(columns)
+            ScrollView {
+                if items.isEmpty {
+                    emptyState.frame(width: geo.size.width, height: geo.size.height * 0.8)
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: gap), count: columns),
+                              spacing: Spacing.m) {
+                        ForEach(items) { asset in
+                            cell(asset, side: side)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
                     }
+                    .padding(.horizontal, Spacing.margin)
+                    .padding(.vertical, Spacing.xs)
                 }
             }
-            tabBar
         }
         .background(Theme.paper.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle(vm.title)
+        .navigationSubtitle(subtitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarRole(.editor)
+        .toolbar {
+            if vm.album.source == .dropbox {
+                ToolbarItem(placement: .topBarTrailing) {
+                    AlbumStatusButton(album: vm.album, folder: vm.folder)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) { filterMenu }
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            ToolbarItem(placement: .bottomBar) { tabPicker }
+        }
+        .onChange(of: vm.minRating) { vm.filterChanged() }
         .sheet(isPresented: $showExport) {
             ExportSheet(items: items, album: vm.album, folder: vm.folder)
         }
@@ -118,82 +120,59 @@ struct RatingGridView: View {
         }
     }
 
-    // MARK: Header
+    // MARK: Toolbar
 
-    private var header: some View {
-        ZStack {
-            VStack(spacing: 3) {
-                Text(vm.title)
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.inkSecondary)
-                    .monospacedDigit()
+    /// Minimum rating for the Selected tab (shared with the swipe screen).
+    private var filterMenu: some View {
+        Menu {
+            Picker("Show", selection: $vm.minRating) {
+                ForEach(RatingFilter.options, id: \.self) { Text(RatingFilter.label($0)).tag($0) }
             }
-            .padding(.horizontal, vm.album.source == .dropbox ? 140 : 100)
-            HStack {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 19))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Back")
-                Spacer()
-                // Export what's shown (current tab, filter and sort) to Dropbox.
-                Button {
-                    guard dropboxAuth.isSignedIn else { exportAlert = "Sign in to Dropbox in Settings to export."; return }
-                    guard Connectivity.shared.mayTryNetwork else { exportAlert = "Connect to the internet to export."; return }
-                    showExport = true
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 18))
-                        .frame(width: 44, height: 44)
-                }
-                .disabled(items.isEmpty)
-                .opacity(items.isEmpty ? 0.3 : 1)
-                .accessibilityLabel("Export \(items.count) photos to Dropbox")
-                if vm.album.source == .dropbox {
-                    AlbumStatusButton(album: vm.album, folder: vm.folder)
-                }
-                Menu {
-                    Picker("Sort", selection: $sort) {
-                        ForEach(Sort.allCases, id: \.self) { Text($0.title).tag($0) }
-                    }
-                    Divider()
-                    Menu {
-                        Picker("Selected", selection: $vm.minRating) {
-                            ForEach(RatingFilter.options, id: \.self) { Text(RatingFilter.label($0)).tag($0) }
-                        }
-                    } label: {
-                        Label("Selected: \(RatingFilter.label(vm.minRating))",
-                              systemImage: "line.3.horizontal.decrease")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 19))
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Sort and filter")
-            }
-            .foregroundStyle(Theme.ink)
-            .padding(.horizontal, 8)
+        } label: {
+            Label("Filter", systemImage: "line.3.horizontal.decrease")
         }
-        .padding(.vertical, 6)
-        .onChange(of: vm.minRating) { vm.filterChanged() }
+        .accessibilityValue(RatingFilter.label(vm.minRating))
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Picker("Sort", selection: $sort) {
+                ForEach(Sort.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            Divider()
+            // Export what's shown (current tab, filter and sort) to Dropbox.
+            Button {
+                guard dropboxAuth.isSignedIn else { exportAlert = "Sign in to Dropbox in Settings to export."; return }
+                guard Connectivity.shared.mayTryNetwork else { exportAlert = "Connect to the internet to export."; return }
+                showExport = true
+            } label: {
+                Label("Export \(items.count) to Dropbox", systemImage: "square.and.arrow.up")
+            }
+            .disabled(items.isEmpty)
+        } label: {
+            Label("More", systemImage: "ellipsis")
+        }
+    }
+
+    private var tabPicker: some View {
+        Picker("Show", selection: $tab) {
+            ForEach(Tab.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 360)
+        .onChange(of: tab) { Haptics.tap() }
     }
 
     // MARK: Cells
 
     private func cell(_ asset: PhotoItem, side: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
             Button {
                 guard tab != .rejected else { return }
                 vm.jump(to: asset)
                 dismiss()
             } label: {
-                Thumbnail(item: asset, side: side, cornerRadius: 4)
+                Thumbnail(item: asset, side: side)
                     .opacity(tab == .rejected ? 0.55 : 1)
                     .overlay(alignment: .topTrailing) { photoStatus(asset) }
             }
@@ -207,16 +186,12 @@ struct RatingGridView: View {
                     withAnimation(.snappy) { vm.unreject(asset) }
                 } label: {
                     Label("Restore", systemImage: "arrow.uturn.backward")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.smallMetadata)
                         .foregroundStyle(Theme.ink)
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, 4)
             } else {
-                // Scale the stars with the thumbnail (larger on iPad).
-                StarRatingView(rating: vm.rating(of: asset),
-                               size: min(max(side * 0.06, 12), 16), spacing: side > 200 ? 4 : 3)
-                    .padding(.leading, 4)
+                RatingControl(rating: vm.rating(of: asset), size: .compact)
             }
         }
     }
@@ -227,7 +202,7 @@ struct RatingGridView: View {
     private func photoStatus(_ item: PhotoItem) -> some View {
         if item.source == .dropbox, sync.isUnsynced(fileID: item.id, isOnline: connectivity.isOnline) {
             Image(systemName: "arrow.up.circle.fill")
-                .font(.system(size: 16))
+                .font(.body)
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(Theme.paper, Theme.ink.opacity(0.75))
                 .padding(6)
@@ -247,39 +222,5 @@ struct RatingGridView: View {
             return MessageView(icon: "eye.slash", title: "No rejected photos",
                                message: "Rejected photos are only hidden in PhotoSwipe — never deleted.")
         }
-    }
-
-    // MARK: Tabs
-
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(Tab.allCases, id: \.self) { t in
-                Button {
-                    Haptics.tap()
-                    tab = t
-                } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: t.icon).font(.system(size: 19, weight: .light))
-                        Text(t.title).font(.system(size: 11))
-                    }
-                    .foregroundStyle(Theme.ink)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 58)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(tab == t ? Theme.surface : .clear)
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(tab == t ? .isSelected : [])
-            }
-        }
-        .frame(maxWidth: 520)   // don't stretch the tabs across an iPad
-        .padding(.horizontal, 24)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-        .frame(maxWidth: .infinity)
-        .background(Theme.paper)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 }

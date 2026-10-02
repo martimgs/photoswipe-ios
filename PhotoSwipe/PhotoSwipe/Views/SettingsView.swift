@@ -27,7 +27,7 @@ struct SettingsView: View {
                 } footer: {
                     Text(footer)
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
 
                 Section {
                     if dropbox.isSignedIn {
@@ -57,7 +57,7 @@ struct SettingsView: View {
                              : "Sign in once to connect Dropbox folders.")
                     }
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
 
                 Section {
                     Picker("Quality", selection: $quality) {
@@ -76,7 +76,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Used when you make a Dropbox album available offline. Optimized saves Dropbox-rendered copies up to 2048 px; Originals saves the full files. Sizes are for all \(estimates.photos) photos in your Dropbox albums; the Optimized size is an estimate.")
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
 
                 #if DEBUG
                 Section {
@@ -86,7 +86,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("Debug builds only. Acts as if there's no internet: no Dropbox syncing, downloads or online thumbnails. Rating changes queue up and show the arrow-up icon.")
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
                 #endif
 
                 Section {
@@ -94,7 +94,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("PhotoSwipe never deletes photos. Rejecting only hides a photo inside this app.")
                 }
-                .listRowBackground(Color.white.opacity(0.6))
+                .listRowBackground(Theme.surface)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.paper)

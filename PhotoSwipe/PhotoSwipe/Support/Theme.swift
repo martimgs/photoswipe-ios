@@ -1,20 +1,56 @@
 import SwiftUI
 
 // MARK: - Palette
-// Light, warm, minimal (see docs/mockup.png).
+// Warm neutrals, defined in Assets.xcassets with dark variants. The photos
+// supply the colour; the interface stays quiet.
 
 enum Theme {
-    static let paper = Color(red: 0.965, green: 0.957, blue: 0.937)     // background
-    static let surface = Color(red: 0.925, green: 0.914, blue: 0.890)   // tiles, selected tab
-    static let ink = Color(red: 0.10, green: 0.10, blue: 0.10)          // text, stars
-    static let inkSecondary = Color(red: 0.46, green: 0.45, blue: 0.43)
-    static let hairline = Color.black.opacity(0.08)
+    static let paper = Color(.background)            // screen background
+    static let surface = Color(.surface)             // image placeholders
+    static let ink = Color(.textPrimary)             // text, filled stars, selection
+    static let inkSecondary = Color(.textSecondary)  // metadata
+    static let inkTertiary = Color(.textTertiary)    // empty stars, quiet icons
+    static let hairline = Color(.hairline)           // borders, dividers
 
-    static let cardCorner: CGFloat = 20
     /// Widest the main column gets on iPad, so lists and the swipe card
     /// don't stretch across a 13-inch screen.
     static let readableWidth: CGFloat = 760
     static let swipeThreshold: CGFloat = 105
+}
+
+// MARK: - Spacing (8 pt system)
+
+enum Spacing {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let s: CGFloat = 12
+    static let m: CGFloat = 16
+    static let l: CGFloat = 24
+    static let xl: CGFloat = 32
+    static let xxl: CGFloat = 40
+    /// Horizontal screen margin.
+    static let margin: CGFloat = l
+}
+
+// MARK: - Corner radii
+
+enum Radius {
+    static let photo: CGFloat = 14
+    static let thumbnail: CGFloat = 8
+}
+
+// MARK: - Type
+// Built-in text styles so Dynamic Type keeps working; weights kept light.
+
+extension Font {
+    /// Home screen title (~34 pt).
+    static let screenTitle = Font.largeTitle.weight(.regular)
+    /// Navigation and row titles (~17 pt).
+    static let rowTitle = Font.body
+    /// Metadata under a title (~15 pt).
+    static let metadata = Font.subheadline
+    /// Small metadata (~13 pt).
+    static let smallMetadata = Font.footnote
 }
 
 // MARK: - Motion tokens

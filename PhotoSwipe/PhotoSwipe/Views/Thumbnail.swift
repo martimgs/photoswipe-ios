@@ -2,9 +2,13 @@ import SwiftUI
 
 /// Small square async thumbnail for grids, filmstrips and album rows.
 struct Thumbnail: View {
+    /// Shared sizes, so rows across screens line up.
+    static let album: CGFloat = 72
+    static let folder: CGFloat = 54
+
     let item: PhotoItem
-    var side: CGFloat = 88
-    var cornerRadius: CGFloat = 14
+    var side: CGFloat = Thumbnail.album
+    var cornerRadius: CGFloat = Radius.thumbnail
     @State private var loaded: (id: String, image: UIImage)?
     @Environment(\.displayScale) private var displayScale
 
