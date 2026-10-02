@@ -1,9 +1,9 @@
 import Photos
 import UIKit
 
-/// Thin wrapper over PhotoKit: authorization, fetching the newest-first asset
-/// stream, image loading, and the mutating operations (favorite, album,
-/// batch delete). All mutations go through `PHPhotoLibrary.performChanges`.
+/// Thin wrapper over PhotoKit: authorization, fetching assets and albums,
+/// image loading, and writing star ratings. Never deletes anything.
+/// All mutations go through `PHPhotoLibrary.performChanges`.
 final class PhotoLibraryService {
     private let imageManager = PHCachingImageManager()
 
@@ -64,24 +64,6 @@ final class PhotoLibraryService {
         }
     }
 
-    // MARK: File size
-
-    /// Approximate on-disk bytes for an asset (sum of its resources).
-    ///
-    /// NOTE: `PHAssetResource` exposes no public byte-size API, so this reads
-    /// the undocumented `fileSize` value via KVC. It works reliably but counts
-    /// as private-API access — strip or replace before any App Store submission
-    /// (fine for personal / sideloaded builds). Returns 0 if unavailable.
-    func byteSize(of asset: PHAsset) -> Int64 {
-        PHAssetResource.assetResources(for: asset).reduce(0) { sum, res in
-            sum + ((res.value(forKey: "fileSize") as? Int64) ?? 0)
-        }
-    }
-
-    func totalBytes(of assets: [PHAsset]) -> Int64 {
-        assets.reduce(0) { $0 + byteSize(of: $1) }
-    }
-
     func startCaching(_ assets: [PHAsset], targetSize: CGSize) {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
@@ -97,24 +79,10 @@ final class PhotoLibraryService {
 
     // MARK: Mutations
 
-    func setFavorite(_ asset: PHAsset, _ favorite: Bool) async throws {
-        try await PHPhotoLibrary.shared().performChanges {
-            let req = PHAssetChangeRequest(for: asset)
-            req.isFavorite = favorite
-        }
-    }
-
     func setRating(_ asset: PHAsset, _ rating: PHAsset.Rating) async throws {
         try await PHPhotoLibrary.shared().performChanges {
             let req = PHAssetChangeRequest(for: asset)
             req.rating = rating
-        }
-    }
-
-    func deleteAssets(_ assets: [PHAsset]) async throws {
-        guard !assets.isEmpty else { return }
-        try await PHPhotoLibrary.shared().performChanges {
-            PHAssetChangeRequest.deleteAssets(assets as NSArray)
         }
     }
 
@@ -131,22 +99,5 @@ final class PhotoLibraryService {
     func album(withLocalIdentifier id: String) -> PHAssetCollection? {
         PHAssetCollection.fetchAssetCollections(
             withLocalIdentifiers: [id], options: nil).firstObject
-    }
-
-    func createAlbum(named title: String) async throws -> String {
-        var localId = ""
-        try await PHPhotoLibrary.shared().performChanges {
-            let req = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: title)
-            localId = req.placeholderForCreatedAssetCollection.localIdentifier
-        }
-        return localId
-    }
-
-    func add(_ asset: PHAsset, toAlbumWithLocalIdentifier id: String) async throws {
-        guard let collection = album(withLocalIdentifier: id) else { return }
-        try await PHPhotoLibrary.shared().performChanges {
-            guard let req = PHAssetCollectionChangeRequest(for: collection) else { return }
-            req.addAssets([asset] as NSArray)
-        }
     }
 }

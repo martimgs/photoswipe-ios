@@ -1,27 +1,27 @@
 import Foundation
 import Photos
 
-/// One decision the user made on a photo. Drives the undo stack and the
-/// pending-delete set that gets committed at review time.
+/// One decision the user made on a photo. Every case carries what's needed to
+/// undo it exactly.
 enum Decision: Equatable {
-    case keep
-    case trash
-    case favorite
-    case skip   // decide later — not persisted, reappears next session
-    case album(localIdentifier: String, title: String)
     /// Star rating change. `from` is kept so undo restores the exact previous value.
     case rate(RatingStep, from: PHAsset.Rating, to: PHAsset.Rating)
+    /// Hidden inside this app only. Never deletes the photo.
+    case reject
 }
 
-/// Which rating gesture was used: right = +1, left = −1, up = straight to 5.
+/// How a rating was changed: right = +1, left = −1, up/heart = pick (5),
+/// star row = an exact value.
 enum RatingStep: Equatable {
-    case up, down, max
+    case up, down, pick
+    case exact(PHAsset.Rating)
 
     func apply(to rating: PHAsset.Rating) -> PHAsset.Rating {
         switch self {
         case .up:   return PHAsset.Rating(rawValue: min(rating.rawValue + 1, 5)) ?? .five
-        case .down: return PHAsset.Rating(rawValue: Swift.max(rating.rawValue - 1, 0)) ?? .unset
-        case .max:  return .five
+        case .down: return PHAsset.Rating(rawValue: max(rating.rawValue - 1, 0)) ?? .unset
+        case .pick: return .five
+        case .exact(let r): return r
         }
     }
 }

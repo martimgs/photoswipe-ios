@@ -8,23 +8,11 @@ import Photos
 struct SwipeDeckView: View {
     @ObservedObject var vm: SwipeDeckViewModel
     @State private var drag: CGSize = .zero
-    @State private var showAlbumSheet = false
-
-    /// Album filing is hidden for now; flip to bring the button back.
-    private let showAlbumButton = false
 
     var body: some View {
         deck
             .safeAreaInset(edge: .top, spacing: 0) { header }
             .safeAreaInset(edge: .bottom, spacing: 0) { actionBar }
-            .sheet(isPresented: $showAlbumSheet) {
-                AlbumPickerView(vm: vm) { decision in
-                    showAlbumSheet = false
-                    fling(.up, decision: decision)
-                }
-                .presentationDetents([.medium, .large])
-                .presentationBackground(.ultraThinMaterial)
-            }
     }
 
     // MARK: Header (premium / techy)
@@ -32,7 +20,7 @@ struct SwipeDeckView: View {
     private var header: some View {
         VStack(spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
-                Button { Haptics.tap(); vm.backToPicker() } label: {
+                Button { Haptics.tap() } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
@@ -43,7 +31,7 @@ struct SwipeDeckView: View {
                 .buttonStyle(PressableStyle())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(vm.source.title.uppercased())
+                    Text("ALL PHOTOS")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .tracking(1.6)
                         .foregroundStyle(Theme.textDim)
@@ -62,7 +50,6 @@ struct SwipeDeckView: View {
                     .fixedSize()
                 }
                 Spacer(minLength: 12)
-                if vm.pendingTrashCount > 0 { deleteBatchButton }
                 undoButton
             }
             progressBar
@@ -71,33 +58,6 @@ struct SwipeDeckView: View {
         .padding(.top, 6)
         .padding(.bottom, 12)
         .background(.ultraThinMaterial.opacity(0.0)) // keep aurora visible
-    }
-
-    /// Delete everything swiped-to-trash so far, without finishing the run.
-    private var deleteBatchButton: some View {
-        Button {
-            Haptics.tap(.rigid)
-            Task { await vm.commitPendingTrash(returnToPicker: false) }
-        } label: {
-            HStack(spacing: 5) {
-                if vm.isCommitting {
-                    ProgressView().controlSize(.small).tint(.white)
-                } else {
-                    Image(systemName: "trash.fill").font(.system(size: 13, weight: .bold))
-                }
-                Text("\(vm.pendingTrashCount)")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: Double(vm.pendingTrashCount)))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 13).frame(height: 44)
-            .background(Theme.gradient(Theme.trash, Theme.trash2), in: Capsule())
-            .shadow(color: Theme.trash.opacity(0.35), radius: 8, y: 3)
-        }
-        .buttonStyle(PressableStyle())
-        .disabled(vm.isCommitting)
-        .animation(.snappy, value: vm.pendingTrashCount)
     }
 
     private var undoButton: some View {
@@ -173,9 +133,9 @@ struct SwipeDeckView: View {
                 } else if t.width < -Theme.swipeThreshold {
                     fling(.left, rating: .down)
                 } else if t.height < -Theme.swipeThreshold {
-                    fling(.up, rating: .max)
+                    fling(.up, rating: .pick)
                 } else if t.height > Theme.swipeThreshold {
-                    fling(.down, decision: .trash)
+                    fling(.down, decision: .reject)
                 } else {
                     Haptics.soft()
                     withAnimation(.cardSpring) { drag = .zero }
@@ -188,13 +148,8 @@ struct SwipeDeckView: View {
     private var actionBar: some View {
         HStack(spacing: 18) {
             actionButton("minus", Theme.album, Theme.album2) { fling(.left, rating: .down) }
-            actionButton("xmark", Theme.trash, Theme.trash2, big: false) { fling(.down, decision: .trash) }
-            if showAlbumButton {
-                actionButton("rectangle.stack.badge.plus", Theme.album, Theme.album2, big: false) {
-                    Haptics.tap(); showAlbumSheet = true
-                }
-            }
-            actionButton("star.fill", Theme.favorite, Theme.favorite2, big: false) { fling(.up, rating: .max) }
+            actionButton("xmark", Theme.trash, Theme.trash2, big: false) { fling(.down, decision: .reject) }
+            actionButton("star.fill", Theme.favorite, Theme.favorite2, big: false) { fling(.up, rating: .pick) }
             actionButton("plus", Theme.keep, Theme.keep2) { fling(.right, rating: .up) }
         }
         .frame(maxWidth: .infinity)
@@ -227,19 +182,14 @@ struct SwipeDeckView: View {
     private enum FlingDir { case left, right, up, down }
 
     private func fling(_ dir: FlingDir, decision: Decision) {
-        switch decision {
-        case .trash: Haptics.tap(.rigid)
-        case .favorite: Haptics.success()
-        case .skip: Haptics.soft()
-        default: Haptics.tap(.light)
-        }
-        fling(dir) { vm.decide(decision) }
+        Haptics.tap(.rigid)
+        fling(dir) { vm.reject() }
     }
 
     /// The new rating is computed when the card lands, so it always builds on
     /// the latest value (e.g. after an undo).
     private func fling(_ dir: FlingDir, rating step: RatingStep) {
-        if step == .max { Haptics.success() } else { Haptics.tap(.light) }
+        if step == .pick { Haptics.success() } else { Haptics.tap(.light) }
         fling(dir) { vm.rate(step) }
     }
 

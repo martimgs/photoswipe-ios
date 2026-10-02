@@ -19,11 +19,8 @@ struct RootView: View {
         case .loading: return "loading"
         case .permissionDenied: return "denied"
         case .empty: return "empty"
-        case .picker: return "picker"
-        case .scanning: return "scanning"
-        case .duplicates: return "duplicates"
         case .swiping: return "swiping"
-        case .review: return "review"
+        case .done: return "done"
         }
     }
 
@@ -35,7 +32,7 @@ struct RootView: View {
             MessageView(
                 icon: "lock.fill",
                 title: "Photo access needed",
-                message: "PhotoSwipe needs your library to help you clean it up. Enable it in Settings › Privacy › Photos.",
+                message: "PhotoSwipe needs access to your photos so you can rate them. Enable it in Settings › Privacy › Photos.",
                 button: "Open Settings",
                 tint: Theme.album
             ) {
@@ -45,16 +42,11 @@ struct RootView: View {
             }
         case .empty:
             EmptyLibraryView()
-        case .picker:
-            SourcePickerView(vm: vm)
-        case .scanning:
-            ScanningView(vm: vm)
-        case .duplicates:
-            DuplicatesView(vm: vm)
         case .swiping:
             SwipeDeckView(vm: vm)
-        case .review:
-            ReviewView(vm: vm)
+        case .done:
+            MessageView(icon: "checkmark.circle", title: "All rated",
+                        message: "You've been through every photo.")
         }
     }
 }
@@ -89,10 +81,10 @@ private struct EmptyLibraryView: View {
                 .font(.system(size: 56))
                 .foregroundStyle(Theme.gradient(Theme.favorite, Theme.favorite2))
                 .offset(y: float ? -8 : 8)
-            Text("Nothing to sweep")
+            Text("No photos yet")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
-            Text("Your library looks empty. Snap or import some photos and come back to tidy up.")
+            Text("Your library looks empty. Add some photos and come back to rate them.")
                 .font(.system(.subheadline, design: .rounded))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.textDim)

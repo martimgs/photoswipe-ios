@@ -218,8 +218,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "PhotoSwipe adds photos to albums you choose.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSwipe needs access to your photo library so you can swipe to clean it up, favorite photos, and organize them into albums.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSwipe shows the albums you choose so you can rate photos. Star ratings are saved to your Photos library. PhotoSwipe never deletes photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -247,8 +246,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "PhotoSwipe adds photos to albums you choose.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSwipe needs access to your photo library so you can swipe to clean it up, favorite photos, and organize them into albums.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSwipe shows the albums you choose so you can rate photos. Star ratings are saved to your Photos library. PhotoSwipe never deletes photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
