@@ -12,6 +12,7 @@ struct PhotoCardView: View {
 
     @State private var image: UIImage?
     @State private var appeared = false
+    @Environment(\.displayScale) private var displayScale
     private let service = PhotoLibraryService()
 
     private var hShift: CGFloat { translation.width / Theme.swipeThreshold }   // +1 star / −1 star
@@ -58,9 +59,9 @@ struct PhotoCardView: View {
                 RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous)
                     .strokeBorder(Theme.stroke, lineWidth: 1)
             )
+            .task(id: asset.localIdentifier) { await loadImage(fitting: geo.size) }
         }
         .cardShadow()
-        .task(id: asset.localIdentifier) { await loadImage() }
     }
 
     // MARK: Layers
@@ -143,10 +144,9 @@ struct PhotoCardView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
-    private func loadImage() async {
-        let scale = UIScreen.main.scale
-        let bounds = UIScreen.main.bounds.size
-        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+    /// Request pixels for the card's actual on-screen size.
+    private func loadImage(fitting cardSize: CGSize) async {
+        let size = CGSize(width: cardSize.width * displayScale, height: cardSize.height * displayScale)
         if let img = await service.requestImage(for: asset, targetSize: size, contentMode: .aspectFit) {
             image = img
             withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { appeared = true }

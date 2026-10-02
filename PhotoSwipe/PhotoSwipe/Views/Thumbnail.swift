@@ -6,6 +6,7 @@ struct Thumbnail: View {
     let asset: PHAsset
     var side: CGFloat = 88
     @State private var image: UIImage?
+    @Environment(\.displayScale) private var displayScale
     private let service = PhotoLibraryService()
 
     var body: some View {
@@ -20,9 +21,8 @@ struct Thumbnail: View {
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .task(id: asset.localIdentifier) {
-            let scale = UIScreen.main.scale
             image = await service.requestImage(
-                for: asset, targetSize: CGSize(width: side * scale, height: side * scale))
+                for: asset, targetSize: CGSize(width: side * displayScale, height: side * displayScale))
         }
     }
 }
