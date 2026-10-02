@@ -9,6 +9,7 @@ import SwiftUI
 ///   left and remove the downloaded files (back to online only)
 struct AlbumStatusButton: View {
     let album: ConnectedAlbum
+    var size: CGFloat = 21
     @ObservedObject private var downloads = OfflineDownloadManager.shared
     @ObservedObject private var sync = DropboxSyncEngine.shared
     @ObservedObject private var connectivity = Connectivity.shared
@@ -17,7 +18,7 @@ struct AlbumStatusButton: View {
     @State private var isRemoving = false
 
     private var status: OfflineDownloadManager.Status {
-        downloads.status(of: album, pending: sync.pendingCountByAlbum[album.externalID] ?? 0)
+        downloads.status(of: album, pending: sync.unsyncedCount(albumID: album.externalID, isOnline: connectivity.isOnline))
     }
 
     var body: some View {
@@ -26,12 +27,12 @@ struct AlbumStatusButton: View {
                 if isRemoving {
                     ProgressView()
                 } else {
-                    AlbumStatusIcon(status: status, size: 21)
+                    AlbumStatusIcon(status: status, size: size)
                 }
             }
             .frame(width: 44, height: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)   // tappable inside a List row without opening it
         .disabled(isRemoving)
         .accessibilityLabel(AlbumStatusIcon.label(status))
         .accessibilityHint(hint)
@@ -96,7 +97,7 @@ struct AlbumStatusButton: View {
     }
 }
 
-/// The status icon on its own (non-tappable), used on Library rows too.
+/// The status icon on its own.
 struct AlbumStatusIcon: View {
     let status: OfflineDownloadManager.Status
     var size: CGFloat = 15

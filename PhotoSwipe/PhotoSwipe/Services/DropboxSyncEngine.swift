@@ -27,6 +27,10 @@ final class DropboxSyncEngine: ObservableObject {
     @Published private(set) var pendingCount = 0
     /// Entries waiting per album (`ConnectedAlbum.externalID`).
     @Published private(set) var pendingCountByAlbum: [String: Int] = [:]
+    /// Dropbox file IDs with a change waiting, for per-photo indicators.
+    @Published private(set) var pendingFileIDs: Set<String> = []
+    /// Entries per album whose last sync attempt failed.
+    @Published private(set) var failedCountByAlbum: [String: Int] = [:]
     /// Set if Dropbox refuses tags for this account; syncing stops.
     @Published private(set) var tagsUnavailableReason: String?
     @Published private(set) var lastError: String?
@@ -62,6 +66,16 @@ final class DropboxSyncEngine: ObservableObject {
             }
         }
         scheduleSync()
+    }
+
+    /// Changes to surface to the user for an album. While online, changes
+    /// sync within seconds, so they only count when they can't sync: the
+    /// device is offline, syncing is blocked, or an attempt failed.
+    func unsyncedCount(albumID: String, isOnline: Bool) -> Int {
+        let pending = pendingCountByAlbum[albumID] ?? 0
+        guard pending > 0 else { return 0 }
+        if !isOnline || tagsUnavailableReason != nil || !DropboxAuth.shared.isSignedIn { return pending }
+        return failedCountByAlbum[albumID] ?? 0
     }
 
     func pendingCount(albumID: String) -> Int {
@@ -132,6 +146,8 @@ final class DropboxSyncEngine: ObservableObject {
         let all = (try? context.fetch(FetchDescriptor<SyncQueueEntry>())) ?? []
         pendingCount = all.count
         pendingCountByAlbum = Dictionary(grouping: all, by: \.albumID).mapValues(\.count)
+        pendingFileIDs = Set(all.map(\.fileID))
+        failedCountByAlbum = Dictionary(grouping: all.filter { $0.attempts > 0 }, by: \.albumID).mapValues(\.count)
     }
 
     // MARK: Dropbox calls

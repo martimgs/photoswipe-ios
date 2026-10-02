@@ -117,8 +117,6 @@ struct AlbumRow: View {
     let album: ConnectedAlbum
     @State private var info: AlbumInfo?
     @Environment(\.modelContext) private var context
-    @ObservedObject private var downloads = OfflineDownloadManager.shared
-    @ObservedObject private var sync = DropboxSyncEngine.shared
 
     var body: some View {
         HStack(spacing: 18) {
@@ -141,9 +139,8 @@ struct AlbumRow: View {
             }
             Spacer(minLength: 8)
             if album.source == .dropbox {
-                let status = downloads.status(of: album, pending: sync.pendingCountByAlbum[album.externalID] ?? 0)
-                AlbumStatusIcon(status: status, size: 15)
-                    .accessibilityLabel(AlbumStatusIcon.label(status))
+                // Album-level offline/sync control.
+                AlbumStatusButton(album: album, size: 20)
             }
         }
         .padding(.vertical, 2)

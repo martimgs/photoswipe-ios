@@ -6,6 +6,7 @@ import SwiftUI
 struct RatingGridView: View {
     @ObservedObject var vm: AlbumSessionViewModel
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var sync = DropboxSyncEngine.shared
     @State private var tab: Tab = .selected
     @State private var sort: Sort = .album
 
@@ -169,6 +170,7 @@ struct RatingGridView: View {
             } label: {
                 Thumbnail(item: asset, side: side, cornerRadius: 4)
                     .opacity(tab == .rejected ? 0.55 : 1)
+                    .overlay(alignment: .topTrailing) { photoStatus(asset) }
             }
             .buttonStyle(.plain)
             .disabled(tab == .rejected)
@@ -188,6 +190,24 @@ struct RatingGridView: View {
             } else {
                 StarRatingView(rating: vm.rating(of: asset), size: 12, spacing: 3)
                     .padding(.leading, 4)
+            }
+        }
+    }
+
+    /// Per-photo Dropbox state: arrow up = rating not yet synced,
+    /// arrow down = on device (album downloaded).
+    @ViewBuilder
+    private func photoStatus(_ item: PhotoItem) -> some View {
+        if item.source == .dropbox {
+            let icon: String? = sync.pendingFileIDs.contains(item.id) ? "arrow.up.circle.fill"
+                : OfflineStore.hasLocalCopy(item.id) ? "arrow.down.circle.fill" : nil
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Theme.paper, Theme.ink.opacity(0.75))
+                    .padding(6)
+                    .accessibilityLabel(icon.hasPrefix("arrow.up") ? "Rating not synced yet" : "Available offline")
             }
         }
     }
