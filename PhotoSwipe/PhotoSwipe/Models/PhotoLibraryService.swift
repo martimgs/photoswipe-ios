@@ -5,13 +5,9 @@ import UIKit
 /// image loading, and writing star ratings. Never deletes anything.
 /// All mutations go through `PHPhotoLibrary.performChanges`.
 final class PhotoLibraryService {
-    private let imageManager = PHCachingImageManager()
+    private let imageManager = PHImageManager.default()
 
     // MARK: Authorization
-
-    func authorizationStatus() -> PHAuthorizationStatus {
-        PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    }
 
     func requestAuthorization() async -> PHAuthorizationStatus {
         await withCheckedContinuation { cont in
@@ -78,19 +74,6 @@ final class PhotoLibraryService {
                 cont.resume(returning: image)
             }
         }
-    }
-
-    func startCaching(_ assets: [PHAsset], targetSize: CGSize) {
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = true
-        imageManager.startCachingImages(for: assets, targetSize: targetSize,
-                                        contentMode: .aspectFill, options: options)
-    }
-
-    /// Drop all prefetched images — call when leaving a deck to bound memory.
-    func stopCaching() {
-        imageManager.stopCachingImagesForAllAssets()
     }
 
     // MARK: Mutations

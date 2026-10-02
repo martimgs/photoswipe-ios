@@ -4,21 +4,15 @@
 
 # PhotoSwipe
 
-**Clean up your iPhone photo library by swiping — Tinder-style.**
+**Rate and select your photos by swiping.**
 
-Swipe right for +1 star, left for −1 star, up for 5 stars, down to reject. Ratings are saved to your Photos library. Find duplicates and free up storage — all **100% on-device**, private, and free.
+Connect an album, then swipe: right for +1 star, left for −1 star, up to pick
+(5 stars), down to reject. Star ratings are saved to your Photos library.
+PhotoSwipe **never deletes photos**, and everything stays on your device.
 
 [![Platform](https://img.shields.io/badge/platform-iOS%2027%2B-black.svg)](#requirements)
-[![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org)
 [![UI](https://img.shields.io/badge/UI-SwiftUI-blue.svg)](https://developer.apple.com/xcode/swiftui/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
-
-<br/>
-
-<img src="PhotoSwipe/docs/demo.gif" width="100%" alt="PhotoSwipe demo" />
-
-<sub><a href="PhotoSwipe/docs/demo.mp4">Watch the full-quality video</a> · made with <a href="https://remotion.dev">Remotion</a></sub>
 
 </div>
 
@@ -26,75 +20,63 @@ Swipe right for +1 star, left for −1 star, up for 5 stars, down to reject. Rat
 
 ## Overview
 
-Got thousands of photos you'll never sort through? PhotoSwipe turns the dreadful
-chore of cleaning your camera roll into a fast, satisfying swipe game.
+Back from a trip with 800 photos and need the best 80? PhotoSwipe turns
+choosing into a quick swipe session. Connect an album, rate each photo with a
+flick, then review your picks in a grid filtered by rating.
 
-Pick what to review (everything, screenshots, biggest files, a year, or
-duplicates), then flick through your photos one card at a time. Nothing is
-deleted until **you** confirm it through iOS's own deletion dialog — and deleted
-photos still land in **Recently Deleted (30 days)**, so mistakes are recoverable.
+> No account. No servers. No tracking. Nothing is ever deleted.
 
-> No account. No servers. No tracking. Your photos never leave your phone.
+<img src="docs/mockup.png" alt="PhotoSwipe screens: library, swipe, rating overlay, review grid" />
 
-## Screenshots
-
-| Pick a source | Swipe to decide | Find duplicates | Freed space + stats |
-|:---:|:---:|:---:|:---:|
-| ![Picker](PhotoSwipe/docs/screenshots/01-picker.png) | ![Swipe](PhotoSwipe/docs/screenshots/02-swipe.png) | ![Duplicates](PhotoSwipe/docs/screenshots/03-duplicates.png) | ![Review](PhotoSwipe/docs/screenshots/04-review.png) |
+<sub>Design mockup. The shipped app follows this layout.</sub>
 
 ## Features
 
-### Swipe to sort
-- **Right → +1 star**, **Left → −1 star**, **Up → 5 stars**, **Down → Reject**
-- Ratings are written to the Photos library with the iOS 27 PhotoKit rating API, so they show up in Photos too
-- Each card shows the photo's current star rating
-- A depth-stacked card deck with spring physics, haptics, and per-direction intent stamps
-- **Undo** the last swipe anytime
+### My Photos
+- Connect the albums you want to work on. Only albums you created in Apple Photos
+  are offered: never your whole library, Recents, or smart albums.
+- Connected albums are remembered between launches. Swipe a row to disconnect
+  it, which never touches the photos.
+- Dropbox is listed as a source and marked **Coming soon**.
 
-### Built for huge libraries (7,000+ photos)
-- **Pause & resume** — every decision is remembered, so you continue exactly where you stopped
-- **Delete the batch you swiped so far** without finishing the whole library — a "Delete N" button appears mid-run
-- A leftover trash queue is offered on the home screen if you quit mid-session
-- **Sources** to break the job into chunks: All Photos · Screenshots · Largest First · by Year
+### Swipe to rate
+- One large photo card, a tappable 5-star row, and a filmstrip to jump to any photo.
+- A large overlay on the card shows what a swipe will do before you let go.
+- **Undo** reverts the last decision exactly, including the previous rating.
+- Reopening an album resumes where you left off.
 
-### Duplicate detection (on-device)
-- Finds near-identical photos and burst shots using a **perceptual difference hash (dHash)** + **average-color** matching + PhotoKit burst grouping
-- Auto-suggests the highest-resolution copy as the keeper (**BEST**), pre-selects the rest for deletion
-- Tap any thumbnail to flip keep/trash, then bulk-delete
-
-### Know your impact
-- **Freed-space estimate** before you commit a deletion
-- **Lifetime analytics** dashboard: total storage reclaimed, photos deleted, duplicates removed, cleanup sessions
-- A little confetti when you finish a run
-
-### Safe by design
-- Deletions go through **iOS's native confirmation** sheet
-- Deleted photos remain in **Recently Deleted** for 30 days
-- Ratings use the standard Photos APIs — change them any time in Photos
+### Review grid
+- **All**, **Selected** and **Rejected** tabs, with each photo's stars underneath.
+- Filter by minimum rating (3+, 4+, 5) in both the swipe and grid views. The
+  filter is always your choice and never applied automatically.
+- Restore rejected photos from the Rejected tab.
 
 ## Gesture cheat-sheet
 
 | Gesture | Action |
 |---|---|
-| Swipe **right** / **+** button | +1 star (max 5) |
-| Swipe **left** / **−** button | −1 star (min unrated) |
-| Swipe **up** / **★** button | Set to 5 stars |
-| Swipe **down** / **✕** button | Reject (queue for deletion) |
-| **Delete N** (header) | Delete everything rejected so far |
+| Swipe **right** | +1 star (max 5) |
+| Swipe **left** | −1 star (min unrated) |
+| Swipe **up** / **heart** button | Pick: set to 5 stars |
+| Swipe **down** / **X** button | Reject: hide in PhotoSwipe only |
+| Tap a **star** | Set an exact rating (stays on the photo) |
+| Tap a **filmstrip** thumbnail | Jump to that photo |
 | **Undo** | Revert the last decision |
+
+Each swipe applies to the current photo and moves to the next.
 
 ## Privacy
 
-PhotoSwipe is fully **offline**. It requests photo-library access only to show,
-rate, and (on your confirmation) delete your photos. There is no
-networking code, no analytics SDK, no account, and no data collection. Lifetime
-stats and review progress are stored locally in `UserDefaults` on your device.
+PhotoSwipe is fully **offline**. It reads only the albums you connect and writes
+only star ratings, using Apple's PhotoKit rating API (`PHAssetChangeRequest.rating`),
+so ratings also show in the Photos app. Connected albums and rejected status are
+stored locally with SwiftData. There is no networking code, analytics, or account.
 
 ## Requirements
 
 - **iPhone** running **iOS 27.0** or later (the star-rating API is iOS 27+)
 - A **Mac** with **Xcode 27** or later (to build & install)
-- An **Apple ID** (a free one works — see the 7-day note below)
+- An **Apple ID** (a free one works; see the 7-day note below)
 
 ---
 
@@ -151,7 +133,7 @@ The first launch is blocked by iOS. On the phone:
 - **Settings → General → VPN & Device Management → [your Apple ID] → Trust**
 
 Reopen **PhotoSwipe** from the home screen and grant **Full Access** to your
-photo library when prompted (limited access weakens rating/delete).
+photo library when prompted (with limited access, albums may be missing and ratings may not save).
 
 ### The 7-day note (free accounts)
 
@@ -165,9 +147,10 @@ this to a year and removes the limit.
 
 ### Run in the Simulator (optional)
 
-You can also run it on the iOS Simulator (no device or signing needed), but the
-Simulator's photo library is nearly empty. Add test photos by dragging images
-onto the Simulator window, or:
+You can also run it on the iOS Simulator (no device or signing needed). The
+Simulator's library is nearly empty and has no albums: add photos by dragging
+images onto the Simulator window (or with the command below), then create an
+album in the Simulator's Photos app so there is something to connect.
 
 ```bash
 xcrun simctl addmedia booted /path/to/photo.jpg
@@ -180,100 +163,72 @@ xcrun simctl addmedia booted /path/to/photo.jpg
 | Symptom | Fix |
 |---|---|
 | **"Developer Mode disabled"** when running | Enable it: Settings → Privacy & Security → Developer Mode → On, then reboot. |
-| **"Communication with Apple failed / no devices"** in Signing | Connect your iPhone first, then press the Run button — the profile is generated on first run. |
+| **"Communication with Apple failed / no devices"** in Signing | Connect your iPhone first, then press the Run button. The profile is generated on first run. |
 | App won't open after a few days | Free-account signing expired (7 days). Reconnect and run from Xcode again. |
 | **"Untrusted Developer"** on launch | Settings → General → VPN & Device Management → trust your Apple ID. |
-| Simulator build fails: *"No simulator runtime version available"* | Your installed Simulator runtime doesn't match the SDK. Install a matching iOS runtime in Xcode → Settings → Components, or build to a real device. |
-| Library looks empty in the Simulator | Expected — add photos with `xcrun simctl addmedia booted <file>` or test on a real device. |
-| Ratings or deletes don't stick | You probably granted *Limited* access. Re-grant **Full Access** in Settings → Privacy → Photos → PhotoSwipe. |
+| Simulator build fails: *"No simulator runtime version available"* | Install a matching iOS runtime in Xcode → Settings → Components, or build to a real device. |
+| "No albums found" when connecting | PhotoSwipe only lists albums you created. Make one in the Photos app first. |
+| An album shows **Unavailable** | The album was deleted in Photos. Swipe the row to disconnect it. |
+| Ratings don't stick | You probably granted *Limited* access. Re-grant **Full Access** in Settings → Privacy → Photos → PhotoSwipe. |
 
 ---
 
 ## Architecture
 
-PhotoSwipe is a single-target SwiftUI app using **MVVM** over **PhotoKit**.
+PhotoSwipe is a single-target SwiftUI app using **MVVM** over **PhotoKit**, with
+**SwiftData** for app-local state.
 
 ```
 PhotoSwipe/
-├─ PhotoSwipeApp.swift          # App entry
+├─ PhotoSwipeApp.swift            # App entry + SwiftData container
 ├─ Models/
-│  ├─ PhotoLibraryService.swift # PhotoKit wrapper: fetch, image load, rating, favorite, album, delete, sizes
-│  ├─ PhotoSource.swift         # Review sources + library facets
-│  ├─ SwipeAction.swift         # Decision model (rate/trash; keep/favorite/skip/album kept for later)
-│  ├─ DuplicateFinder.swift     # dHash + average-color + burst grouping (union-find)
-│  ├─ ReviewStore.swift         # Persisted "already decided" set (resume)
-│  ├─ PendingTrashStore.swift   # Persisted trash queue (pause / batch delete)
-│  └─ StatsStore.swift          # Lifetime analytics
+│  ├─ PhotoLibraryService.swift   # PhotoKit: albums, photos, images, rating writes (no deletion)
+│  ├─ ConnectedAlbum.swift        # SwiftData: connected album + resume position
+│  ├─ PhotoState.swift            # SwiftData: per-photo rejected flag, keyed by (source, id)
+│  ├─ PhotoSourceKind.swift       # Apple Photos / Dropbox (planned)
+│  └─ SwipeAction.swift           # Decisions (rate / reject) with undo data
 ├─ ViewModels/
-│  └─ SwipeDeckViewModel.swift  # @MainActor state machine: loading→picker→{swiping|duplicates}→review
+│  └─ AlbumSessionViewModel.swift # One album: deck, filter, ratings, rejects, undo
 ├─ Views/
-│  ├─ RootView.swift            # Phase router + aurora background
-│  ├─ SourcePickerView.swift    # Home screen tiles + stats hero + pending-trash banner
-│  ├─ SwipeDeckView.swift       # Card deck, gestures, action bar, mid-run delete
-│  ├─ PhotoCardView.swift       # Card: fitted photo over blurred fill, intent stamps
-│  ├─ DuplicatesView.swift      # Duplicate groups review
-│  ├─ ScanningView.swift        # Scan progress ring
-│  ├─ ReviewView.swift          # End-of-run summary + confetti + commit
-│  ├─ StatsView.swift           # Lifetime analytics dashboard
-│  ├─ AlbumPickerView.swift     # Album chooser / creator
-│  └─ Thumbnail.swift           # Async grid thumbnail
+│  ├─ RootView.swift              # Photo-access gate
+│  ├─ LibraryView.swift           # "My Photos": connected albums
+│  ├─ ConnectAlbumSheet.swift     # Source + album picker
+│  ├─ SettingsView.swift          # Photo access, version
+│  ├─ AlbumScreen.swift           # Hosts swipe + grid for one album
+│  ├─ SwipeDeckView.swift         # Rating screen: card, gestures, buttons
+│  ├─ PhotoCardView.swift         # Card + drag overlay
+│  ├─ StarRatingView.swift        # 5-star row + filter labels
+│  ├─ FilmstripView.swift         # Tap-to-jump thumbnails
+│  ├─ RatingGridView.swift        # All / Selected / Rejected grid
+│  └─ Thumbnail.swift             # Async thumbnail
 └─ Support/
-   ├─ Theme.swift               # Colors, gradients, motion tokens, haptics, aurora
-   └─ Confetti.swift            # Celebration burst
+   └─ Theme.swift                 # Palette, motion, haptics
 ```
 
-**How duplicate detection works:** each candidate's 160px thumbnail is reduced to
-a 9×8 grayscale **difference hash** (64-bit structure fingerprint) plus an
-**average RGB color**. Two photos are duplicates when their hash Hamming distance
-is small **and** their average colors match (so same-shape/different-color images
-aren't falsely grouped), or when they share a PhotoKit burst identifier.
-Comparisons run only within a small time-sorted neighbour window, keeping it
-near-linear for large libraries.
-
 ### Tech stack
-SwiftUI · PhotoKit (`PHPhotoLibrary`, `PHCachingImageManager`) · Core Graphics ·
-Swift Concurrency · MVVM. No third-party dependencies.
+SwiftUI · PhotoKit · SwiftData · Swift Concurrency · MVVM. No third-party dependencies.
 
 ## Roadmap
 
+- [ ] Dropbox albums (folders)
+- [ ] Export selected photos
 - [ ] Video support
-- [ ] iOS 18 tinted / dark app-icon variants
-- [ ] Home-screen widget ("N photos to review")
-- [ ] Before/after device free-space (`volumeAvailableCapacity`)
-- [ ] Per-session freed-space chart
-- [ ] Limited-access photo-picker flow
-- [ ] App Store release (replace the private `PHAssetResource.fileSize` size lookup first)
 
 ## Contributing
 
-Contributions are welcome! This is a small, focused, no-dependency codebase —
-a great place to learn SwiftUI + PhotoKit.
-
 1. Fork the repo and create a branch: `git checkout -b feature/my-thing`
-2. Keep the style: SwiftUI + MVVM, no third-party deps, on-device only.
-3. Build clean against iOS 27+.
-4. Open a PR with a clear description and a screenshot/GIF for UI changes.
-
-Found a bug or have an idea? [Open an issue](../../issues).
-
-## Disclaimer
-
-PhotoSwipe deletes photos from your library (with your confirmation, into
-Recently Deleted). Use at your own risk and keep a backup (iCloud Photos / a
-computer) before mass-cleaning. The author is not responsible for lost data.
-
-> The size estimate uses an undocumented `PHAssetResource.fileSize` value via
-> KVC. It works reliably for personal/sideloaded builds but counts as private-API
-> access and must be replaced before any App Store submission.
+2. Keep the style: SwiftUI + MVVM, no third-party deps, on-device only, and **no deletion**.
+3. Build clean (no warnings) against iOS 27+.
+4. Open a PR with a clear description and a screenshot or GIF for UI changes.
 
 ## License
 
 [MIT](LICENSE) © 2026 Alperen Adatepe
 
-This is a fork of [noluyorAbi/photoswipe-ios](https://github.com/noluyorAbi/photoswipe-ios) that replaces keep/trash/favorite with star ratings.
+This is a fork of [noluyorAbi/photoswipe-ios](https://github.com/noluyorAbi/photoswipe-ios),
+reworked from a photo-cleanup app into a rating and selection app.
 
 ## Acknowledgements
 
-- Built with Apple's **PhotoKit** and **SwiftUI**.
-- Duplicate detection inspired by classic **perceptual hashing** (dHash).
+- Built with Apple's **PhotoKit**, **SwiftUI** and **SwiftData**.
 - Not affiliated with the unrelated [PhotoSwipe](https://photoswipe.com) JavaScript gallery.
