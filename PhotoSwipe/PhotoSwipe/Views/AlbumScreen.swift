@@ -30,7 +30,7 @@ struct AlbumScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.paper.ignoresSafeArea())
         .navigationDestination(isPresented: $showGrid) {
-            Text("Grid")   // replaced in the next step
+            RatingGridView(vm: vm)
         }
         .task { if vm.phase == .loading { vm.load(context: context) } }
     }
