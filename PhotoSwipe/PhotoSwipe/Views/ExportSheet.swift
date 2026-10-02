@@ -25,9 +25,9 @@ struct ExportSheet: View {
 
     var body: some View {
         NavigationStack(path: $stack) {
-            ExportFolderLevel(path: "", count: items.count, onSave: export)
+            ExportFolderLevel(path: "", count: items.count, onSave: export, onCancel: { dismiss() })
                 .navigationDestination(for: String.self) { path in
-                    ExportFolderLevel(path: path, count: items.count, onSave: export)
+                    ExportFolderLevel(path: path, count: items.count, onSave: export, onCancel: { dismiss() })
                 }
         }
         .tint(Theme.ink)
@@ -147,8 +147,10 @@ private struct ExportFolderLevel: View {
     let path: String
     let count: Int
     let onSave: (String) -> Void
+    /// Closes the whole export sheet (a pushed level's own dismiss would
+    /// only go back one folder).
+    let onCancel: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var subfolders: [DropboxService.Folder] = []
     @State private var loaded = false
     @State private var error: String?
@@ -183,7 +185,7 @@ private struct ExportFolderLevel: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { onCancel() }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { newName = ""; askName = true } label: {
@@ -215,7 +217,7 @@ private struct ExportFolderLevel: View {
             Text("Created inside “\(title)”.")
         }
         .navigationDestination(item: $created) { path in
-            ExportFolderLevel(path: path, count: count, onSave: onSave)
+            ExportFolderLevel(path: path, count: count, onSave: onSave, onCancel: onCancel)
         }
         .task { await load() }
     }
