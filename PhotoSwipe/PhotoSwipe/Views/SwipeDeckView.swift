@@ -8,6 +8,7 @@ import Photos
 struct SwipeDeckView: View {
     @ObservedObject var vm: SwipeDeckViewModel
     @State private var drag: CGSize = .zero
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         deck
@@ -20,7 +21,7 @@ struct SwipeDeckView: View {
     private var header: some View {
         VStack(spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
-                Button { Haptics.tap() } label: {
+                Button { Haptics.tap(); dismiss() } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white)
@@ -31,7 +32,7 @@ struct SwipeDeckView: View {
                 .buttonStyle(PressableStyle())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ALL PHOTOS")
+                    Text(vm.album.name.uppercased())
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .tracking(1.6)
                         .foregroundStyle(Theme.textDim)

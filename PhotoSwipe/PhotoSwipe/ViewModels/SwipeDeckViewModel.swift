@@ -5,11 +5,13 @@ import Photos
 final class SwipeDeckViewModel: ObservableObject {
     enum Phase {
         case loading
-        case permissionDenied
+        case unavailable   // album no longer exists at its source
         case empty
         case swiping
         case done
     }
+
+    let album: ConnectedAlbum
 
     @Published var phase: Phase = .loading
     @Published private(set) var assets: [PHAsset] = []
@@ -22,6 +24,10 @@ final class SwipeDeckViewModel: ObservableObject {
     @Published private(set) var ratingOverrides: [String: PHAsset.Rating] = [:]
 
     private let service = PhotoLibraryService()
+
+    init(album: ConnectedAlbum) {
+        self.album = album
+    }
 
     // MARK: Derived
 
@@ -38,22 +44,14 @@ final class SwipeDeckViewModel: ObservableObject {
         ratingOverrides[asset.localIdentifier] ?? asset.rating
     }
 
-    // MARK: Bootstrap
+    // MARK: Load
 
-    func bootstrap() async {
-        switch service.authorizationStatus() {
-        case .authorized, .limited:
-            loadLibrary()
-        case .notDetermined:
-            let s = await service.requestAuthorization()
-            if s == .authorized || s == .limited { loadLibrary() } else { phase = .permissionDenied }
-        default:
-            phase = .permissionDenied
+    func load() {
+        guard let collection = service.album(withLocalIdentifier: album.externalID) else {
+            phase = .unavailable
+            return
         }
-    }
-
-    private func loadLibrary() {
-        assets = service.fetchAllPhotos()
+        assets = service.photos(in: collection)
         index = 0
         history = []
         phase = assets.isEmpty ? .empty : .swiping

@@ -1,11 +1,13 @@
 import SwiftUI
+import SwiftData
 
 @main
 struct PhotoSwipeApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
         }
+        .modelContainer(for: [ConnectedAlbum.self, PhotoState.self])
     }
 }

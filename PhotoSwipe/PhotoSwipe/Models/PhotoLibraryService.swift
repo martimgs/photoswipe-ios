@@ -23,16 +23,32 @@ final class PhotoLibraryService {
 
     // MARK: Fetch
 
-    /// All image assets, newest first.
-    func fetchAllPhotos() -> [PHAsset] {
+    // Deliberately no whole-library fetch: the app only ever works inside
+    // albums the user has connected.
+
+    private var imagesOnly: PHFetchOptions {
         let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-        let result = PHAsset.fetchAssets(with: options)
+        return options
+    }
+
+    /// Image assets in an album, in the album's own order.
+    func photos(in album: PHAssetCollection) -> [PHAsset] {
+        let result = PHAsset.fetchAssets(in: album, options: imagesOnly)
         var assets: [PHAsset] = []
         assets.reserveCapacity(result.count)
         result.enumerateObjects { asset, _, _ in assets.append(asset) }
         return assets
+    }
+
+    func photoCount(in album: PHAssetCollection) -> Int {
+        PHAsset.fetchAssets(in: album, options: imagesOnly).count
+    }
+
+    /// The album's key photo, falling back to its first image.
+    func coverPhoto(of album: PHAssetCollection) -> PHAsset? {
+        PHAsset.fetchKeyAssets(in: album, options: imagesOnly)?.firstObject
+            ?? PHAsset.fetchAssets(in: album, options: imagesOnly).firstObject
     }
 
     // MARK: Image loading
@@ -88,6 +104,8 @@ final class PhotoLibraryService {
 
     // MARK: Albums
 
+    /// Albums the user created. Excludes smart albums (Recents, Favorites…)
+    /// and shared iCloud albums by construction.
     func userAlbums() -> [PHAssetCollection] {
         let result = PHAssetCollection.fetchAssetCollections(
             with: .album, subtype: .albumRegular, options: nil)

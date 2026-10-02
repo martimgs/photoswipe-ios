@@ -3,6 +3,13 @@ import SwiftUI
 // MARK: - Palette
 
 enum Theme {
+    // Light, warm, minimal (see docs/mockup.png).
+    static let paper = Color(red: 0.965, green: 0.957, blue: 0.937)     // background
+    static let surface = Color(red: 0.925, green: 0.914, blue: 0.890)   // tiles, selected rows
+    static let ink = Color(red: 0.10, green: 0.10, blue: 0.10)          // text, stars
+    static let inkSecondary = Color(red: 0.46, green: 0.45, blue: 0.43)
+    static let hairline = Color.black.opacity(0.08)
+
     // Deep, slightly-blue near-black. Not flat #000 — has life.
     static let bg0 = Color(red: 0.04, green: 0.04, blue: 0.06)
     static let bg1 = Color(red: 0.07, green: 0.07, blue: 0.10)
