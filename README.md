@@ -6,9 +6,9 @@
 
 **Clean up your iPhone photo library by swiping — Tinder-style.**
 
-Swipe left to trash, right to keep, up to favorite, down to skip. Find duplicates, free up storage, and organize into albums — all **100% on-device**, private, and free.
+Swipe right for +1 star, left for −1 star, up for 5 stars, down to reject. Ratings are saved to your Photos library. Find duplicates and free up storage — all **100% on-device**, private, and free.
 
-[![Platform](https://img.shields.io/badge/platform-iOS%2017%2B-black.svg)](#requirements)
+[![Platform](https://img.shields.io/badge/platform-iOS%2027%2B-black.svg)](#requirements)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org)
 [![UI](https://img.shields.io/badge/UI-SwiftUI-blue.svg)](https://developer.apple.com/xcode/swiftui/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -45,8 +45,9 @@ photos still land in **Recently Deleted (30 days)**, so mistakes are recoverable
 ## Features
 
 ### Swipe to sort
-- **Left → Trash**, **Right → Keep**, **Up → Favorite**, **Down → Skip for later**
-- Tap the **album** button to file a photo into an existing or new album
+- **Right → +1 star**, **Left → −1 star**, **Up → 5 stars**, **Down → Reject**
+- Ratings are written to the Photos library with the iOS 27 PhotoKit rating API, so they show up in Photos too
+- Each card shows the photo's current star rating
 - A depth-stacked card deck with spring physics, haptics, and per-direction intent stamps
 - **Undo** the last swipe anytime
 
@@ -69,31 +70,30 @@ photos still land in **Recently Deleted (30 days)**, so mistakes are recoverable
 ### Safe by design
 - Deletions go through **iOS's native confirmation** sheet
 - Deleted photos remain in **Recently Deleted** for 30 days
-- Favoriting and album-filing use the standard Photos APIs — fully reversible in Photos
+- Ratings use the standard Photos APIs — change them any time in Photos
 
 ## Gesture cheat-sheet
 
 | Gesture | Action |
 |---|---|
-| Swipe **right** / heart button | Keep |
-| Swipe **left** / trash button | Queue for deletion |
-| Swipe **up** / star button | Favorite |
-| Swipe **down** | Skip for later (reappears next session) |
-| **Album** button | Add to an album (create new inline) |
-| **Delete N** (header) | Delete everything swiped-to-trash so far |
+| Swipe **right** / **+** button | +1 star (max 5) |
+| Swipe **left** / **−** button | −1 star (min unrated) |
+| Swipe **up** / **★** button | Set to 5 stars |
+| Swipe **down** / **✕** button | Reject (queue for deletion) |
+| **Delete N** (header) | Delete everything rejected so far |
 | **Undo** | Revert the last decision |
 
 ## Privacy
 
 PhotoSwipe is fully **offline**. It requests photo-library access only to show,
-favorite, organize, and (on your confirmation) delete your photos. There is no
+rate, and (on your confirmation) delete your photos. There is no
 networking code, no analytics SDK, no account, and no data collection. Lifetime
 stats and review progress are stored locally in `UserDefaults` on your device.
 
 ## Requirements
 
-- **iPhone** running **iOS 17.0** or later (built and tested through iOS 26)
-- A **Mac** with **Xcode 16** or later (to build & install)
+- **iPhone** running **iOS 27.0** or later (the star-rating API is iOS 27+)
+- A **Mac** with **Xcode 27** or later (to build & install)
 - An **Apple ID** (a free one works — see the 7-day note below)
 
 ---
@@ -106,7 +106,7 @@ There is no App Store build yet — you install it from source with Xcode. A
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/noluyorAbi/photoswipe-ios.git
+git clone https://github.com/martimgs/photoswipe-ios.git
 cd photoswipe-ios
 ```
 
@@ -151,7 +151,7 @@ The first launch is blocked by iOS. On the phone:
 - **Settings → General → VPN & Device Management → [your Apple ID] → Trust**
 
 Reopen **PhotoSwipe** from the home screen and grant **Full Access** to your
-photo library when prompted (limited access weakens favorite/album/delete).
+photo library when prompted (limited access weakens rating/delete).
 
 ### The 7-day note (free accounts)
 
@@ -185,7 +185,7 @@ xcrun simctl addmedia booted /path/to/photo.jpg
 | **"Untrusted Developer"** on launch | Settings → General → VPN & Device Management → trust your Apple ID. |
 | Simulator build fails: *"No simulator runtime version available"* | Your installed Simulator runtime doesn't match the SDK. Install a matching iOS runtime in Xcode → Settings → Components, or build to a real device. |
 | Library looks empty in the Simulator | Expected — add photos with `xcrun simctl addmedia booted <file>` or test on a real device. |
-| Photos won't favorite/delete | You probably granted *Limited* access. Re-grant **Full Access** in Settings → Privacy → Photos → PhotoSwipe. |
+| Ratings or deletes don't stick | You probably granted *Limited* access. Re-grant **Full Access** in Settings → Privacy → Photos → PhotoSwipe. |
 
 ---
 
@@ -197,9 +197,9 @@ PhotoSwipe is a single-target SwiftUI app using **MVVM** over **PhotoKit**.
 PhotoSwipe/
 ├─ PhotoSwipeApp.swift          # App entry
 ├─ Models/
-│  ├─ PhotoLibraryService.swift # PhotoKit wrapper: fetch, image load, favorite, album, delete, sizes
+│  ├─ PhotoLibraryService.swift # PhotoKit wrapper: fetch, image load, rating, favorite, album, delete, sizes
 │  ├─ PhotoSource.swift         # Review sources + library facets
-│  ├─ SwipeAction.swift         # Decision model (keep/trash/favorite/skip/album)
+│  ├─ SwipeAction.swift         # Decision model (rate/trash; keep/favorite/skip/album kept for later)
 │  ├─ DuplicateFinder.swift     # dHash + average-color + burst grouping (union-find)
 │  ├─ ReviewStore.swift         # Persisted "already decided" set (resume)
 │  ├─ PendingTrashStore.swift   # Persisted trash queue (pause / batch delete)
@@ -251,7 +251,7 @@ a great place to learn SwiftUI + PhotoKit.
 
 1. Fork the repo and create a branch: `git checkout -b feature/my-thing`
 2. Keep the style: SwiftUI + MVVM, no third-party deps, on-device only.
-3. Build clean (no warnings) against iOS 17+.
+3. Build clean against iOS 27+.
 4. Open a PR with a clear description and a screenshot/GIF for UI changes.
 
 Found a bug or have an idea? [Open an issue](../../issues).
@@ -269,6 +269,8 @@ computer) before mass-cleaning. The author is not responsible for lost data.
 ## License
 
 [MIT](LICENSE) © 2026 Alperen Adatepe
+
+This is a fork of [noluyorAbi/photoswipe-ios](https://github.com/noluyorAbi/photoswipe-ios) that replaces keep/trash/favorite with star ratings.
 
 ## Acknowledgements
 
