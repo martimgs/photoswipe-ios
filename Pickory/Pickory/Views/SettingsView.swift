@@ -53,7 +53,7 @@ struct SettingsView: View {
                         Text("Ratings can't be saved to Dropbox as tags: \(reason)")
                     } else {
                         Text(dropbox.isSignedIn
-                             ? "Signing out keeps your albums, ratings and downloaded photos in PhotoSwipe."
+                             ? "Signing out keeps your albums, ratings and downloaded photos in Pickory."
                              : "Sign in once to connect Dropbox folders.")
                     }
                 }
@@ -92,7 +92,7 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Version", value: version)
                 } footer: {
-                    Text("PhotoSwipe never deletes photos. Rejecting only hides a photo inside this app.")
+                    Text("Pickory never deletes photos. Rejecting only hides a photo inside this app.")
                 }
                 .listRowBackground(Theme.surface)
             }
@@ -102,8 +102,8 @@ struct SettingsView: View {
                 Button("Sign Out", role: .destructive) { dropbox.signOut() }
             } message: {
                 Text(sync.pendingCount > 0
-                     ? "\(sync.pendingCount) rating changes haven't synced yet. They stay in PhotoSwipe and sync after you sign in again."
-                     : "Your Dropbox albums, ratings and downloaded photos stay in PhotoSwipe.")
+                     ? "\(sync.pendingCount) rating changes haven't synced yet. They stay in Pickory and sync after you sign in again."
+                     : "Your Dropbox albums, ratings and downloaded photos stay in Pickory.")
             }
             .task { estimates = OfflineDownloadManager.shared.estimatedSizes() }
             .navigationTitle("Settings")

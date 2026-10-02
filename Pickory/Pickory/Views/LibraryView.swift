@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import Photos
 
-/// Landing screen ("My Photos"): the albums the user has connected, plus a
+/// Landing screen ("Albums"): the albums the user has connected, plus a
 /// "Connect Album" row. Swiping a row away disconnects it — the photos
 /// themselves are never touched.
 struct LibraryView: View {
@@ -30,6 +30,7 @@ struct LibraryView: View {
                             toggle(album.externalID)
                         }
                     }
+                    .navigationLinkIndicatorVisibility(.hidden)
                     .swipeActions(edge: .trailing) {
                         Button("Disconnect", role: .destructive) { disconnect(album) }
                     }
@@ -41,6 +42,7 @@ struct LibraryView: View {
                                     toggle(key(album, entry.node))
                                 }
                             }
+                            .navigationLinkIndicatorVisibility(.hidden)
                         }
                     }
                 }
@@ -61,7 +63,7 @@ struct LibraryView: View {
             .frame(maxWidth: Theme.readableWidth)
             .frame(maxWidth: .infinity)
             .background(Theme.paper)
-            .navigationTitle("My Photos")
+            .navigationTitle("Albums")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AlbumRoute.self) { route in
                 AlbumScreen(route: route)
@@ -78,7 +80,7 @@ struct LibraryView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("My Photos")
+            Text("Albums")
                 .font(.screenTitle)
                 .foregroundStyle(Theme.ink)
                 .accessibilityAddTraits(.isHeader)
@@ -193,6 +195,7 @@ struct AlbumRow: View {
                 // Album-level offline/sync control.
                 AlbumStatusButton(album: album)
             }
+            RowChevron()
         }
         // Re-read after each Dropbox "check for changes".
         .task(id: "\(album.externalID)|\(album.lastCheckedAt?.timeIntervalSince1970 ?? 0)") {
@@ -296,8 +299,20 @@ struct FolderRow: View {
             }
             Spacer(minLength: 0)
             // Keep just this folder (and its subfolders) offline.
-            AlbumStatusButton(album: album, folder: node.path)
+            // Shown only when it differs from the album's own icon.
+            AlbumStatusButton(album: album, folder: node.path, hidesWhenSameAsAlbum: true)
+            RowChevron()
         }
         .padding(.leading, CGFloat(depth) * Spacing.l)
+    }
+}
+
+/// A small, light disclosure chevron for album and folder rows.
+struct RowChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Theme.inkTertiary)
+            .accessibilityHidden(true)
     }
 }

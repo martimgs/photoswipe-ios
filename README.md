@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src="PhotoSwipe/docs/icon.png" width="120" alt="PhotoSwipe icon" />
+<img src="Pickory/docs/icon.png" width="120" alt="Pickory icon" />
 
-# PhotoSwipe
+# Pickory
 
 **Rate and select your photos by swiping.**
 
 Connect an album, then swipe: right for +1 star, left for −1 star, up to pick
 (5 stars), down to reject. Star ratings are saved to your Photos library.
-PhotoSwipe **never deletes photos**, and everything stays on your device.
+Pickory **never deletes photos**, and everything stays on your device.
 
 [![Platform](https://img.shields.io/badge/platform-iOS%2027%2B-black.svg)](#requirements)
 [![UI](https://img.shields.io/badge/UI-SwiftUI-blue.svg)](https://developer.apple.com/xcode/swiftui/)
@@ -20,13 +20,13 @@ PhotoSwipe **never deletes photos**, and everything stays on your device.
 
 ## Overview
 
-Back from a trip with 800 photos and need the best 80? PhotoSwipe turns
+Back from a trip with 800 photos and need the best 80? Pickory turns
 choosing into a quick swipe session. Connect an album, rate each photo with a
 flick, then review your picks in a grid filtered by rating.
 
 > No account. No servers. No tracking. Nothing is ever deleted.
 
-<img src="docs/mockup.png" alt="PhotoSwipe screens: library, swipe, rating overlay, review grid" />
+<img src="docs/mockup.png" alt="Pickory screens: library, swipe, rating overlay, review grid" />
 
 <sub>Design mockup. The shipped app follows this layout.</sub>
 
@@ -59,7 +59,7 @@ flick, then review your picks in a grid filtered by rating.
 | Swipe **right** | +1 star (max 5) |
 | Swipe **left** | −1 star (min unrated) |
 | Swipe **up** / **heart** button | Pick: set to 5 stars |
-| Swipe **down** / **X** button | Reject: set to 0 stars and hide in PhotoSwipe (never deleted) |
+| Swipe **down** / **X** button | Reject: set to 0 stars and hide in Pickory (never deleted) |
 | Tap a **star** | Set an exact rating (stays on the photo) |
 | Tap a **filmstrip** thumbnail | Jump to that photo |
 | **Undo** | Revert the last decision |
@@ -68,7 +68,7 @@ Each swipe applies to the current photo and moves to the next.
 
 ## Privacy
 
-PhotoSwipe is fully **offline**. It reads only the albums you connect and writes
+Pickory is fully **offline**. It reads only the albums you connect and writes
 only star ratings, using Apple's PhotoKit rating API (`PHAssetChangeRequest.rating`),
 so ratings also show in the Photos app. Connected albums and rejected status are
 stored locally with SwiftData. There is no networking code, analytics, or account.
@@ -96,21 +96,21 @@ cd photoswipe-ios
 ### 2. Open the project
 
 ```bash
-open PhotoSwipe/PhotoSwipe.xcodeproj
+open Pickory/Pickory.xcodeproj
 ```
 
-(or open `PhotoSwipe/PhotoSwipe.xcodeproj` from Xcode → File → Open.)
+(or open `Pickory/Pickory.xcodeproj` from Xcode → File → Open.)
 
 ### 3. Set up signing (free Apple ID)
 
-1. In Xcode's left sidebar, select the **PhotoSwipe** project, then the
-   **PhotoSwipe** target.
+1. In Xcode's left sidebar, select the **Pickory** project, then the
+   **Pickory** target.
 2. Open the **Signing & Capabilities** tab.
 3. Tick **Automatically manage signing**.
 4. **Team →** *Add an Account…* → sign in with your Apple ID → pick your
    *(Personal Team)*.
 5. Change the **Bundle Identifier** to something unique to you, e.g.
-   `com.yourname.PhotoSwipe` (the default may already be taken).
+   `com.yourname.Pickory` (the default may already be taken).
 
 ### 4. Enable Developer Mode on your iPhone
 
@@ -133,7 +133,7 @@ The first launch is blocked by iOS. On the phone:
 
 - **Settings → General → VPN & Device Management → [your Apple ID] → Trust**
 
-Reopen **PhotoSwipe** from the home screen and grant **Full Access** to your
+Reopen **Pickory** from the home screen and grant **Full Access** to your
 photo library when prompted (with limited access, albums may be missing and ratings may not save).
 
 ### The 7-day note (free accounts)
@@ -168,20 +168,20 @@ xcrun simctl addmedia booted /path/to/photo.jpg
 | App won't open after a few days | Free-account signing expired (7 days). Reconnect and run from Xcode again. |
 | **"Untrusted Developer"** on launch | Settings → General → VPN & Device Management → trust your Apple ID. |
 | Simulator build fails: *"No simulator runtime version available"* | Install a matching iOS runtime in Xcode → Settings → Components, or build to a real device. |
-| "No albums found" when connecting | PhotoSwipe only lists albums you created. Make one in the Photos app first. |
+| "No albums found" when connecting | Pickory only lists albums you created. Make one in the Photos app first. |
 | An album shows **Unavailable** | The album was deleted in Photos. Swipe the row to disconnect it. |
-| Ratings don't stick | You probably granted *Limited* access. Re-grant **Full Access** in Settings → Privacy → Photos → PhotoSwipe. |
+| Ratings don't stick | You probably granted *Limited* access. Re-grant **Full Access** in Settings → Privacy → Photos → Pickory. |
 
 ---
 
 ## Architecture
 
-PhotoSwipe is a single-target SwiftUI app using **MVVM** over **PhotoKit**, with
+Pickory is a single-target SwiftUI app using **MVVM** over **PhotoKit**, with
 **SwiftData** for app-local state.
 
 ```
-PhotoSwipe/
-├─ PhotoSwipeApp.swift            # App entry + SwiftData container
+Pickory/
+├─ PickoryApp.swift            # App entry + SwiftData container
 ├─ Models/
 │  ├─ PhotoLibraryService.swift   # PhotoKit: albums, photos, images, rating writes (no deletion)
 │  ├─ ConnectedAlbum.swift        # SwiftData: connected album + resume position
@@ -232,4 +232,3 @@ reworked from a photo-cleanup app into a rating and selection app.
 ## Acknowledgements
 
 - Built with Apple's **PhotoKit**, **SwiftUI** and **SwiftData**.
-- Not affiliated with the unrelated [PhotoSwipe](https://photoswipe.com) JavaScript gallery.

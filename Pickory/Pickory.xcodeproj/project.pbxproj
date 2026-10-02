@@ -11,7 +11,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		AA0000000000000000000010 /* PhotoSwipe */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = PhotoSwipe; sourceTree = "<group>"; };
+		AA0000000000000000000010 /* Pickory */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Pickory; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -29,7 +29,7 @@
 		AA0000000000000000000030 = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000010 /* PhotoSwipe */,
+				AA0000000000000000000010 /* Pickory */,
 				AA0000000000000000000040 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -44,9 +44,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA0000000000000000000060 /* PhotoSwipe */ = {
+		AA0000000000000000000060 /* Pickory */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA0000000000000000000070 /* Build configuration list for PBXNativeTarget "PhotoSwipe" */;
+			buildConfigurationList = AA0000000000000000000070 /* Build configuration list for PBXNativeTarget "Pickory" */;
 			buildPhases = (
 				AA0000000000000000000080 /* Sources */,
 				AA0000000000000000000020 /* Frameworks */,
@@ -57,13 +57,13 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				AA0000000000000000000010 /* PhotoSwipe */,
+				AA0000000000000000000010 /* Pickory */,
 			);
-			name = PhotoSwipe;
+			name = Pickory;
 			packageProductDependencies = (
 				AA0000000000000000000100 /* SwiftyDropbox */,
 			);
-			productName = PhotoSwipe;
+			productName = Pickory;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -81,7 +81,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AA00000000000000000000B0 /* Build configuration list for PBXProject "PhotoSwipe" */;
+			buildConfigurationList = AA00000000000000000000B0 /* Build configuration list for PBXProject "Pickory" */;
 			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -97,7 +97,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA0000000000000000000060 /* PhotoSwipe */,
+				AA0000000000000000000060 /* Pickory */,
 			);
 		};
 /* End PBXProject section */
@@ -231,7 +231,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSwipe shows the albums you choose so you can rate photos. Star ratings are saved to your Photos library. PhotoSwipe never deletes photos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Pickory shows the albums you choose so you can rate photos. Star ratings are saved to your Photos library. Pickory never deletes photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -262,7 +262,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "PhotoSwipe shows the albums you choose so you can rate photos. Star ratings are saved to your Photos library. PhotoSwipe never deletes photos.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Pickory shows the albums you choose so you can rate photos. Star ratings are saved to your Photos library. Pickory never deletes photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -285,7 +285,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA0000000000000000000070 /* Build configuration list for PBXNativeTarget "PhotoSwipe" */ = {
+		AA0000000000000000000070 /* Build configuration list for PBXNativeTarget "Pickory" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA00000000000000000000E0 /* Debug */,
@@ -294,7 +294,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA00000000000000000000B0 /* Build configuration list for PBXProject "PhotoSwipe" */ = {
+		AA00000000000000000000B0 /* Build configuration list for PBXProject "Pickory" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA00000000000000000000C0 /* Debug */,

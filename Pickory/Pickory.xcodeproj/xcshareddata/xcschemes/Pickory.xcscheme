@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AA0000000000000000000060"
-               BuildableName = "PhotoSwipe"
-               ReferencedContainer = "container:PhotoSwipe.xcodeproj">
+               BuildableName = "Pickory"
+               ReferencedContainer = "container:Pickory.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -42,7 +42,7 @@
       queueDebuggingEnabled = "No">
       <PathRunnable
          runnableDebuggingMode = "0"
-         FilePath = "/Users/martimguerrasilva/Library/Developer/Xcode/DerivedData/PhotoSwipe-fbdbnobmhdmboqbthzkyozjymkjn/Build/Products/Debug-iphoneos/PhotoSwipe.app">
+         FilePath = "/Users/martimguerrasilva/Library/Developer/Xcode/DerivedData/Pickory-fbdbnobmhdmboqbthzkyozjymkjn/Build/Products/Debug-iphoneos/Pickory.app">
       </PathRunnable>
    </LaunchAction>
    <ProfileAction
@@ -55,8 +55,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AA0000000000000000000060"
-            BuildableName = "PhotoSwipe"
-            ReferencedContainer = "container:PhotoSwipe.xcodeproj">
+            BuildableName = "Pickory"
+            ReferencedContainer = "container:Pickory.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </ProfileAction>

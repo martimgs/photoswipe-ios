@@ -11,7 +11,10 @@ struct AlbumStatusButton: View {
     let album: ConnectedAlbum
     /// A subfolder of the album, or nil for the whole album.
     var folder: String? = nil
-    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 17
+    /// For folder rows: show nothing when the folder's state is the same as
+    /// the whole album's, so only the album row carries the icon.
+    var hidesWhenSameAsAlbum = false
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 14
     @ObservedObject private var downloads = OfflineDownloadManager.shared
     @ObservedObject private var sync = DropboxSyncEngine.shared
     @ObservedObject private var connectivity = Connectivity.shared
@@ -19,8 +22,8 @@ struct AlbumStatusButton: View {
     @State private var confirmRemove = false
     @State private var isRemoving = false
 
-    /// Unsynced changes in this album/folder (counted only when they can't sync now).
-    private var unsynced: Int {
+    /// Unsynced changes in the album or one folder (counted only when they can't sync now).
+    private func unsynced(in folder: String?) -> Int {
         guard (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 else { return 0 }
         return downloads.fileIDs(of: album, folder: folder)
             .filter { sync.isUnsynced(fileID: $0, isOnline: connectivity.isOnline) }.count
@@ -35,10 +38,24 @@ struct AlbumStatusButton: View {
     private var noun: String { folder == nil ? "album" : "folder" }
 
     private var status: OfflineDownloadManager.Status {
-        downloads.status(of: album, folder: folder, pending: unsynced)
+        downloads.status(of: album, folder: folder, pending: unsynced(in: folder))
+    }
+
+    private var isSameAsAlbum: Bool {
+        guard folder != nil else { return false }
+        let albumStatus = downloads.status(of: album, folder: nil, pending: unsynced(in: nil))
+        return AlbumStatusIcon.sameKind(status, albumStatus)
     }
 
     var body: some View {
+        if hidesWhenSameAsAlbum && isSameAsAlbum && !isRemoving {
+            EmptyView()
+        } else {
+            button
+        }
+    }
+
+    private var button: some View {
         Button(action: tap) {
             Group {
                 if isRemoving {
@@ -47,7 +64,7 @@ struct AlbumStatusButton: View {
                     AlbumStatusIcon(status: status, size: size)
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: 36, height: 44)
         }
         .buttonStyle(.borderless)   // tappable inside a List row without opening it
         .disabled(isRemoving)
@@ -59,7 +76,7 @@ struct AlbumStatusButton: View {
         .confirmationDialog("Make this \(noun) online only?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Sync and Remove Downloads", role: .destructive) { Task { await syncAndRemove() } }
         } message: {
-            Text("Any rating changes are synced to Dropbox first, then the downloaded photos in this \(noun) are removed from this device. Your ratings stay in PhotoSwipe, and nothing in Dropbox is deleted.")
+            Text("Any rating changes are synced to Dropbox first, then the downloaded photos in this \(noun) are removed from this device. Your ratings stay in Pickory, and nothing in Dropbox is deleted.")
         }
     }
 
@@ -123,51 +140,52 @@ struct AlbumStatusButton: View {
     }
 }
 
-/// The status icon on its own: small, light and secondary, so it never
-/// competes with the album's name or cover.
+/// The status icon on its own: a small filled circle in ink or gray with a
+/// light glyph, like the Files and Dropbox apps but black and white.
 struct AlbumStatusIcon: View {
     let status: OfflineDownloadManager.Status
-    var size: CGFloat = 15
+    var size: CGFloat = 14
 
     var body: some View {
         switch status {
         case .onlineOnly:
-            symbol("arrow.down.circle")
+            badge("cloud.circle.fill", Theme.inkTertiary)
         case .downloading(let p), .paused(let p):
             ZStack {
                 Circle().stroke(Theme.hairline, lineWidth: 1.5)
                 Circle().trim(from: 0, to: max(p.fraction, 0.03))
-                    .stroke(Theme.inkSecondary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .stroke(Theme.ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.snappy, value: p.fraction)
                 Image(systemName: isPaused ? "play.fill" : "pause.fill")
                     .font(.system(size: size * 0.4, weight: .regular))
-                    .foregroundStyle(Theme.inkSecondary)
+                    .foregroundStyle(Theme.ink)
             }
-            .frame(width: size * 1.15, height: size * 1.15)
-        case .pending(let count):
-            // Unsynced changes are worth noticing: ink, with a count.
-            Image(systemName: "arrow.up.circle")
-                .font(.system(size: size, weight: .light))
-                .foregroundStyle(Theme.ink)
-                .overlay(alignment: .topTrailing) {
-                    Text(count > 99 ? "99+" : "\(count)")
-                        .font(.system(size: max(size * 0.5, 9), weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.paper)
-                        .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background(Theme.ink, in: Capsule())
-                        .offset(x: size * 0.55, y: -size * 0.45)
-                }
+            .frame(width: size, height: size)
+        case .pending:
+            // The count is in the accessibility label.
+            badge("arrow.up.circle.fill", Theme.ink)
         case .offline:
-            symbol("checkmark.circle")
+            badge("checkmark.circle.fill", Theme.ink)
         }
     }
 
-    private func symbol(_ name: String) -> some View {
+    private func badge(_ name: String, _ fill: Color) -> some View {
         Image(systemName: name)
-            .font(.system(size: size, weight: .light))
-            .foregroundStyle(Theme.inkTertiary)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(Theme.paper, fill)
+            .font(.system(size: size, weight: .semibold))
+    }
+
+    /// Same state, ignoring counts and progress.
+    static func sameKind(_ a: OfflineDownloadManager.Status, _ b: OfflineDownloadManager.Status) -> Bool {
+        switch (a, b) {
+        case (.onlineOnly, .onlineOnly), (.downloading, .downloading), (.paused, .paused),
+             (.pending, .pending), (.offline, .offline):
+            return true
+        default:
+            return false
+        }
     }
 
     private var isPaused: Bool {

@@ -35,8 +35,10 @@ enum Spacing {
 // MARK: - Corner radii
 
 enum Radius {
-    static let photo: CGFloat = 14
-    static let thumbnail: CGFloat = 8
+    static let photo: CGFloat = 8
+    static let thumbnail: CGFloat = 4
+    /// Filled text buttons.
+    static let control: CGFloat = 8
 }
 
 // MARK: - Type

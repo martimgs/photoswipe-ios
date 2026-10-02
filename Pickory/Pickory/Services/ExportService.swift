@@ -20,7 +20,7 @@ final class ExportService {
             switch self {
             case .signedOut: return "Sign in to Dropbox in Settings first."
             case .missingPermission:
-                return "PhotoSwipe needs permission to save files in Dropbox. Enable files.content.write in the Dropbox app console, then sign out and sign in again in Settings."
+                return "Pickory needs permission to save files in Dropbox. Enable files.content.write in the Dropbox app console, then sign out and sign in again in Settings."
             case .failed(let message): return message
             }
         }

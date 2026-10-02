@@ -16,6 +16,7 @@ import os
 final class OfflineDownloadManager: ObservableObject {
     static let shared = OfflineDownloadManager()
 
+    // Kept from before the rename so in-flight background downloads still resume.
     static let backgroundSessionIdentifier = "PhotoSwipe.DropboxDownloads"
     static let qualityKey = "downloadQuality"
 
@@ -34,7 +35,7 @@ final class OfflineDownloadManager: ObservableObject {
     private var context: ModelContext? { container?.mainContext }
     /// Outstanding requests per album, so pause can cancel them.
     private var outstanding: [String: [String: () -> Void]] = [:]
-    private let log = Logger(subsystem: "PhotoSwipe", category: "OfflineDownloads")
+    private let log = Logger(subsystem: "Pickory", category: "OfflineDownloads")
 
     private init() {}
 

@@ -42,7 +42,7 @@ final class DropboxSyncEngine: ObservableObject {
     private var debounce: Task<Void, Never>?
     private var retryTimer: Timer?
 
-    private let log = Logger(subsystem: "PhotoSwipe", category: "DropboxSync")
+    private let log = Logger(subsystem: "Pickory", category: "DropboxSync")
 
     private init() {}
 

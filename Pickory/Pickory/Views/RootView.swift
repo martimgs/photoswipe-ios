@@ -19,7 +19,7 @@ struct RootView: View {
                 MessageView(
                     icon: "lock",
                     title: "Photo access needed",
-                    message: "PhotoSwipe needs access to your photos so you can rate them. It never deletes anything.",
+                    message: "Pickory needs access to your photos so you can rate them. It never deletes anything.",
                     button: "Open Settings"
                 ) {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -59,7 +59,7 @@ struct MessageView: View {
                     .font(.body.weight(.medium))
                     .foregroundStyle(Theme.paper)
                     .padding(.horizontal, 22).padding(.vertical, 12)
-                    .background(Theme.ink, in: Capsule())
+                    .background(Theme.ink, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
                     .buttonStyle(PressableStyle())
                     .padding(.top, 6)
             }

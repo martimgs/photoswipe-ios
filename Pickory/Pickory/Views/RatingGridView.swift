@@ -220,7 +220,7 @@ struct RatingGridView: View {
                                message: "Photos rated \(RatingFilter.label(selectedMin)) appear here.")
         case .rejected:
             return MessageView(icon: "eye.slash", title: "No rejected photos",
-                               message: "Rejected photos are only hidden in PhotoSwipe — never deleted.")
+                               message: "Rejected photos are only hidden in Pickory — never deleted.")
         }
     }
 }

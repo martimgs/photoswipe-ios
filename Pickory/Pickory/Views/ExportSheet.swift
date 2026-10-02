@@ -135,7 +135,7 @@ struct ExportSheet: View {
             .font(.body.weight(.medium))
             .foregroundStyle(Theme.paper)
             .padding(.horizontal, 22).padding(.vertical, 12)
-            .background(Theme.ink, in: Capsule())
+            .background(Theme.ink, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
             .padding(.top, 6)
     }
 }
@@ -201,7 +201,7 @@ private struct ExportFolderLevel: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
                     .foregroundStyle(Theme.paper)
-                    .background(Theme.ink, in: Capsule())
+                    .background(Theme.ink, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
             }
             .disabled(path.isEmpty || count == 0)
             .opacity(path.isEmpty ? 0.4 : 1)
