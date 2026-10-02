@@ -133,7 +133,7 @@ struct RatingGridView: View {
                 .accessibilityLabel("Back")
                 Spacer()
                 if vm.album.source == .dropbox {
-                    AlbumStatusButton(album: vm.album)
+                    AlbumStatusButton(album: vm.album, folder: vm.folder)
                 }
                 Menu {
                     Picker("Sort", selection: $sort) {

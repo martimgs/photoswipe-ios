@@ -27,8 +27,15 @@ final class ConnectedAlbum {
     /// Older albums were listed flat; their cursor is dropped once.
     var isRecursive: Bool = false
     var lastCheckedAt: Date?
-    /// Raw value of `OfflineState`.
+    /// Raw value of `OfflineState`. Legacy (whole-album offline); migrated
+    /// to `offlineFolders` on first launch of the per-folder version.
     var offlineStateRaw: String = OfflineState.onlineOnly.rawValue
+    /// Exact subfolder paths kept offline ("" = the album's top level).
+    /// A file is kept offline when its folder is in this list.
+    var offlineFolders: [String] = []
+    /// The album's download queue is paused (or stopped after failures).
+    var downloadPaused: Bool = false
+    var offlineMigrated: Bool = false
     /// Raw value of `DownloadQuality` used for this album's offline copy.
     var offlineQualityRaw: String?
 

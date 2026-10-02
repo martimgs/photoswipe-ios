@@ -8,9 +8,25 @@ struct SwipeDeckView: View {
     var onOpenGrid: () -> Void
 
     @State private var drag: CGSize = .zero
+    @State private var fullScreen: PhotoItem?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        GeometryReader { geo in
+            // Wider than tall (phone or iPad landscape): photo on the left,
+            // controls in a column on the right, so the photo gets the height.
+            if geo.size.width > geo.size.height * 1.15 {
+                landscape
+            } else {
+                portrait
+            }
+        }
+        .background(Theme.paper.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .fullScreenCover(item: $fullScreen) { FullScreenPhotoView(item: $0) }
+    }
+
+    private var portrait: some View {
         VStack(spacing: 0) {
             header
             if let current = vm.current {
@@ -28,8 +44,29 @@ struct SwipeDeckView: View {
         }
         .frame(maxWidth: Theme.readableWidth)
         .frame(maxWidth: .infinity)
-        .background(Theme.paper.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var landscape: some View {
+        HStack(spacing: 0) {
+            if let current = vm.current {
+                card(current)
+                    .padding(.vertical, 12)
+                    .padding(.leading, 16)
+            } else {
+                endState
+            }
+            VStack(spacing: 14) {
+                header
+                Spacer(minLength: 0)
+                if let current = vm.current {
+                    StarRatingView(rating: vm.rating(of: current), size: 22, spacing: 6) { vm.setRating($0) }
+                }
+                actionBar
+                Spacer(minLength: 0)
+            }
+            .frame(width: 280)
+            .padding(.vertical, 8)
+        }
     }
 
     // MARK: Header
@@ -102,7 +139,10 @@ struct SwipeDeckView: View {
                 .id(current.id)
                 .offset(drag)
                 .rotationEffect(.degrees(Double(drag.width / 18)), anchor: .bottom)
+                // Tap = full screen; a drag of 10+ pt is a swipe instead.
+                .onTapGesture { fullScreen = current }
                 .gesture(dragGesture)
+                .accessibilityAction(named: "View Full Screen") { fullScreen = current }
                 .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity),
                                         removal: .opacity))
         }

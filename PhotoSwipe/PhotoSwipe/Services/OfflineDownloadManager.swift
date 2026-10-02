@@ -8,8 +8,10 @@ import os
 /// background and reconnect after a relaunch. Files go to Application
 /// Support (`OfflineStore`), never Caches.
 ///
-/// Pausing cancels the outstanding requests; finished files are kept and a
-/// file that was mid-download starts over on resume.
+/// Offline is per folder: each album keeps a list of folders to hold on the
+/// device. Downloading a parent adds all its subfolders; files download
+/// folder by folder. Pausing cancels the outstanding requests; finished
+/// files are kept and a file that was mid-download starts over on resume.
 @MainActor
 final class OfflineDownloadManager: ObservableObject {
     static let shared = OfflineDownloadManager()
@@ -24,8 +26,9 @@ final class OfflineDownloadManager: ObservableObject {
         var fraction: Double { total == 0 ? 0 : Double(done) / Double(total) }
     }
 
-    /// Live progress per album (`ConnectedAlbum.externalID`).
-    @Published private(set) var progress: [String: Progress] = [:]
+    /// Bumped whenever a download finishes or offline folders change, so
+    /// status icons refresh.
+    @Published private(set) var revision = 0
 
     private var container: ModelContainer?
     private var context: ModelContext? { container?.mainContext }
@@ -45,10 +48,11 @@ final class OfflineDownloadManager: ObservableObject {
         NotificationCenter.default.addObserver(forName: Connectivity.becameOnline, object: nil, queue: .main) { _ in
             Task { @MainActor in OfflineDownloadManager.shared.pump() }
         }
+        migrateWholeAlbumOffline()
         if OfflineStore.removeLegacyFiles() {
-            // Re-download albums that were (partly) offline under the old naming.
-            for album in albums() where album.offlineState != .onlineOnly {
-                album.offlineState = .downloading
+            // Re-download whatever was offline under the old file naming.
+            for album in albums() {
+                album.downloadPaused = false
                 for file in files(of: album) {
                     file.localFileName = nil
                     file.localSize = 0
@@ -57,15 +61,27 @@ final class OfflineDownloadManager: ObservableObject {
             try? context?.save()
             ImageLoader.shared.forgetAll()
         }
-        // Albums left "downloading" by a previous run resume once requests
+        // Downloads left unfinished by a previous run resume once requests
         // have reconnected (or immediately if none survived).
         Task {
             try? await Task.sleep(for: .seconds(2))
-            for album in albums() where album.offlineState == .downloading {
-                resume(album)
+            for album in albums() where !album.downloadPaused && !album.offlineFolders.isEmpty {
+                enqueueMissing(album)
             }
             removeStaleParts()
         }
+    }
+
+    /// Albums made offline before per-folder offline: every folder offline.
+    private func migrateWholeAlbumOffline() {
+        for album in albums() where !album.offlineMigrated {
+            if album.offlineState != .onlineOnly {
+                album.offlineFolders = Array(Set(files(of: album).map(\.folderPath)))
+                album.downloadPaused = album.offlineState == .paused
+            }
+            album.offlineMigrated = true
+        }
+        try? context?.save()
     }
 
     // MARK: Status
@@ -78,72 +94,103 @@ final class OfflineDownloadManager: ObservableObject {
         case offline
     }
 
-    func status(of album: ConnectedAlbum, pending: Int) -> Status {
-        switch album.offlineState {
-        case .downloading: return .downloading(progress[album.externalID] ?? currentProgress(album))
-        case .paused: return .paused(progress[album.externalID] ?? currentProgress(album))
-        default: break
+    /// State of an album or one of its folders (`folder` nil = whole album).
+    /// Downloaded = `DropboxFile.localFileName` is set (no disk access here).
+    func status(of album: ConnectedAlbum, folder: String? = nil, pending: Int) -> Status {
+        _ = revision
+        let wanted = Set(album.offlineFolders)
+        let scope = files(of: album).filter { FolderScope.contains(folder, folder: $0.folderPath) }
+        let inList = scope.filter { wanted.contains($0.folderPath) }
+        let missing = inList.filter { $0.localFileName == nil }.count
+        if missing > 0 {
+            let p = Progress(done: inList.count - missing, total: inList.count, failed: 0)
+            return album.downloadPaused ? .paused(p) : .downloading(p)
         }
         if pending > 0 { return .pending(pending) }
-        return album.offlineState == .offline ? .offline : .onlineOnly
+        if !scope.isEmpty && inList.count == scope.count { return .offline }
+        return .onlineOnly
     }
 
-    private func currentProgress(_ album: ConnectedAlbum) -> Progress {
-        let files = files(of: album)
-        return Progress(done: files.filter { OfflineStore.hasLocalCopy($0.fileID) }.count,
-                        total: files.count, failed: 0)
+    /// File IDs in an album or folder (for per-scope unsynced counts).
+    func fileIDs(of album: ConnectedAlbum, folder: String?) -> [String] {
+        files(of: album).filter { FolderScope.contains(folder, folder: $0.folderPath) }.map(\.fileID)
+    }
+
+    /// Folder paths that exist (contain photos) in an album or folder.
+    private func folderPaths(of album: ConnectedAlbum, under folder: String?) -> Set<String> {
+        Set(files(of: album).map(\.folderPath).filter { FolderScope.contains(folder, folder: $0) })
     }
 
     // MARK: Actions
 
-    /// Online only -> Downloading, using the default quality from Settings.
-    func download(_ album: ConnectedAlbum) {
-        album.offlineQualityRaw = Self.defaultQuality.rawValue
-        album.offlineState = .downloading
+    /// Keep an album or folder (and everything below it) offline, using the
+    /// default quality from Settings. Folders download one after another.
+    func download(_ album: ConnectedAlbum, folder: String? = nil) {
+        album.offlineFolders = Array(Set(album.offlineFolders).union(folderPaths(of: album, under: folder)))
+        album.offlineQualityRaw = album.offlineQualityRaw ?? Self.defaultQuality.rawValue
+        album.downloadPaused = false
         try? context?.save()
+        revision += 1
         enqueueMissing(album)
     }
 
     func pause(_ album: ConnectedAlbum) {
-        album.offlineState = .paused
+        album.downloadPaused = true
         try? context?.save()
         waiting[album.externalID] = nil
         outstanding[album.externalID]?.values.forEach { $0() }
         outstanding[album.externalID] = nil
+        revision += 1
     }
 
     func resume(_ album: ConnectedAlbum) {
-        album.offlineState = .downloading
+        album.downloadPaused = false
         try? context?.save()
+        revision += 1
         enqueueMissing(album)
     }
 
-    /// Offline -> Online only. Deletes only the app's own copies; Dropbox
+    /// Make an album or folder online only again. Deletes only the app's
+    /// own copies (kept if another album still holds them offline); Dropbox
     /// files are never touched and ratings are kept. Callers must make sure
     /// no changes are pending first.
-    func removeDownloads(_ album: ConnectedAlbum) {
-        pause(album)
-        for file in files(of: album) {
+    func removeDownloads(_ album: ConnectedAlbum, folder: String? = nil) {
+        let remove = folderPaths(of: album, under: folder)
+        album.offlineFolders = album.offlineFolders.filter { !remove.contains($0) }
+        if folder == nil { album.offlineFolders = [] }
+        // Stop queued/running downloads for those folders.
+        let leaving = Set(files(of: album).filter { remove.contains($0.folderPath) }.map(\.fileID))
+        waiting[album.externalID]?.removeAll { leaving.contains($0) }
+        for id in leaving { outstanding[album.externalID]?[id]?(); outstanding[album.externalID]?[id] = nil }
+        for file in files(of: album) where remove.contains(file.folderPath) {
             if let context { OfflineStore.removeLocalCopyIfUnused(file.fileID, leaving: album.externalID, context: context) }
             file.localFileName = nil
             file.localQualityRaw = nil
             file.localSize = 0
         }
-        album.offlineState = .onlineOnly
-        album.offlineQualityRaw = nil
-        progress[album.externalID] = nil
+        if album.offlineFolders.isEmpty {
+            album.offlineQualityRaw = nil
+            album.downloadPaused = false
+        }
         try? context?.save()
+        revision += 1
         ImageLoader.shared.forgetAll()
     }
 
-    /// After "check for changes" on an offline album: fetch just the new files.
+    /// After "check for changes": new subfolders of an offline folder are
+    /// kept offline too, then just the new files are fetched.
     func downloadNewFiles(_ album: ConnectedAlbum) {
-        guard album.offlineState == .offline || album.offlineState == .downloading else { return }
-        let missing = files(of: album).filter { !OfflineStore.hasLocalCopy($0.fileID) }
-        guard !missing.isEmpty else { return }
-        album.offlineState = .downloading
+        guard !album.offlineFolders.isEmpty else { return }
+        var wanted = Set(album.offlineFolders)
+        // Shallowest first, so new nested folders chain from new parents.
+        for path in folderPaths(of: album, under: nil).sorted(by: { $0.count < $1.count })
+        where !wanted.contains(path) {
+            if let parent = FolderScope.parent(of: path), wanted.contains(parent) { wanted.insert(path) }
+        }
+        album.offlineFolders = Array(wanted)
         try? context?.save()
-        enqueueMissing(album)
+        revision += 1
+        if !album.downloadPaused { enqueueMissing(album) }
     }
 
     // MARK: Queueing
@@ -159,12 +206,21 @@ final class OfflineDownloadManager: ObservableObject {
 
     private func enqueueMissing(_ album: ConnectedAlbum) {
         let albumID = album.externalID
-        let all = files(of: album)
-        let missing = all.filter { !OfflineStore.hasLocalCopy($0.fileID) }
-        progress[albumID] = Progress(done: all.count - missing.count, total: all.count, failed: 0)
+        let wanted = Set(album.offlineFolders)
+        // Folder by folder (album order: top level, then folders A–Z).
+        let order = AlbumSessionViewModel.dropboxItems(albumID: albumID, context: context!).map(\.id)
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+        let candidates = files(of: album).filter { wanted.contains($0.folderPath) }
+        // A file can already be on disk via another album: just record it.
+        for file in candidates where file.localFileName == nil && OfflineStore.hasLocalCopy(file.fileID) {
+            file.localFileName = OfflineStore.fileName(for: file.fileID)
+        }
+        let missing = candidates.filter { !OfflineStore.hasLocalCopy($0.fileID) }
+            .sorted { (rank[$0.fileID] ?? .max) < (rank[$1.fileID] ?? .max) }
+        revision += 1
         guard DropboxClientsManager.authorizedBackgroundClient != nil else {
             log.error("No background client; pausing \(albumID, privacy: .public)")
-            album.offlineState = .paused
+            album.downloadPaused = true
             try? context?.save()
             return
         }
@@ -259,14 +315,17 @@ final class OfflineDownloadManager: ObservableObject {
         if OfflineStore.hasLocalCopy(fileID) {
             if error == nil { Connectivity.shared.markReachable() }
             // Success — or a duplicate request for a file another one saved.
-            if let file = files(of: album).first(where: { $0.fileID == fileID }), file.localFileName == nil {
+            // Mark it downloaded in every album that contains it.
+            let attrs = try? FileManager.default.attributesOfItem(atPath: final.path)
+            let records = (try? context?.fetch(FetchDescriptor<DropboxFile>(
+                predicate: #Predicate { $0.fileID == fileID }))) ?? []
+            for file in records where file.localFileName == nil {
                 file.localFileName = OfflineStore.fileName(for: fileID)
                 file.localQualityRaw = quality.rawValue
-                let attrs = try? FileManager.default.attributesOfItem(atPath: final.path)
                 file.localSize = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-                try? context?.save()
             }
-            refreshProgress(album)
+            try? context?.save()
+            revision += 1
         } else if isActive(albumID), let error {
             log.error("Download failed \(fileID, privacy: .public): \(error, privacy: .public)")
             attempts[fileID, default: 0] += 1
@@ -278,35 +337,30 @@ final class OfflineDownloadManager: ObservableObject {
             }
             if attempts[fileID, default: 0] < Self.maxAttempts {
                 waiting[albumID, default: []].append(fileID)
-            } else {
-                progress[albumID]?.failed += 1
             }
         }
         finishIfComplete(album)
     }
 
-    private func refreshProgress(_ album: ConnectedAlbum) {
-        let all = files(of: album)
-        let done = all.filter { OfflineStore.hasLocalCopy($0.fileID) }.count
-        progress[album.externalID] = Progress(done: done, total: all.count,
-                                              failed: progress[album.externalID]?.failed ?? 0)
-    }
-
-    /// Nothing running or waiting: everything local -> Offline; otherwise
-    /// Paused (tap resumes, retrying just the missing files).
+    /// Nothing running or waiting: if anything is still missing (failures),
+    /// pause so a tap retries just those files.
     private func finishIfComplete(_ album: ConnectedAlbum) {
         let albumID = album.externalID
-        guard album.offlineState == .downloading,
+        guard !album.downloadPaused,
               outstanding[albumID]?.isEmpty ?? true,
               waiting[albumID]?.isEmpty ?? true else { return }
-        let allLocal = files(of: album).allSatisfy { OfflineStore.hasLocalCopy($0.fileID) }
-        album.offlineState = allLocal ? .offline : .paused
-        progress[albumID]?.failed = 0
+        let wanted = Set(album.offlineFolders)
+        let allLocal = files(of: album).filter { wanted.contains($0.folderPath) }
+            .allSatisfy { OfflineStore.hasLocalCopy($0.fileID) }
+        if !allLocal { album.downloadPaused = true }
         try? context?.save()
-        objectWillChange.send()
+        revision += 1
     }
 
-    private func isActive(_ albumID: String) -> Bool { album(albumID)?.offlineState == .downloading }
+    private func isActive(_ albumID: String) -> Bool {
+        guard let album = album(albumID) else { return false }
+        return !album.downloadPaused && !album.offlineFolders.isEmpty
+    }
 
     private func track(_ albumID: String, _ fileID: String, cancel: @escaping () -> Void) {
         outstanding[albumID, default: [:]][fileID] = cancel

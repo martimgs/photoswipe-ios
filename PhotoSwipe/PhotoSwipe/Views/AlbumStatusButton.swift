@@ -9,6 +9,8 @@ import SwiftUI
 ///   left and remove the downloaded files (back to online only)
 struct AlbumStatusButton: View {
     let album: ConnectedAlbum
+    /// A subfolder of the album, or nil for the whole album.
+    var folder: String? = nil
     var size: CGFloat = 21
     @ObservedObject private var downloads = OfflineDownloadManager.shared
     @ObservedObject private var sync = DropboxSyncEngine.shared
@@ -17,8 +19,23 @@ struct AlbumStatusButton: View {
     @State private var confirmRemove = false
     @State private var isRemoving = false
 
+    /// Unsynced changes in this album/folder (counted only when they can't sync now).
+    private var unsynced: Int {
+        guard (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 else { return 0 }
+        return downloads.fileIDs(of: album, folder: folder)
+            .filter { sync.isUnsynced(fileID: $0, isOnline: connectivity.isOnline) }.count
+    }
+
+    /// Changes waiting at all in this album/folder (for "sync before remove").
+    private var pendingInScope: Int {
+        guard (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 else { return 0 }
+        return downloads.fileIDs(of: album, folder: folder).filter { sync.pendingFileIDs.contains($0) }.count
+    }
+
+    private var noun: String { folder == nil ? "album" : "folder" }
+
     private var status: OfflineDownloadManager.Status {
-        downloads.status(of: album, pending: sync.unsyncedCount(albumID: album.externalID, isOnline: connectivity.isOnline))
+        downloads.status(of: album, folder: folder, pending: unsynced)
     }
 
     var body: some View {
@@ -39,16 +56,16 @@ struct AlbumStatusButton: View {
         .alert(alert ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } })) {
             Button("OK", role: .cancel) {}
         }
-        .confirmationDialog("Make this album online only?", isPresented: $confirmRemove, titleVisibility: .visible) {
+        .confirmationDialog("Make this \(noun) online only?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Sync and Remove Downloads", role: .destructive) { Task { await syncAndRemove() } }
         } message: {
-            Text("Any rating changes are synced to Dropbox first, then the downloaded photos are removed from this device. The album and your ratings stay in PhotoSwipe, and nothing in Dropbox is deleted.")
+            Text("Any rating changes are synced to Dropbox first, then the downloaded photos in this \(noun) are removed from this device. Your ratings stay in PhotoSwipe, and nothing in Dropbox is deleted.")
         }
     }
 
     private var hint: String {
         switch status {
-        case .onlineOnly: return "Downloads the album for offline use"
+        case .onlineOnly: return "Downloads the \(noun) for offline use"
         case .downloading: return "Pauses the download"
         case .paused: return "Resumes the download"
         case .pending: return "Syncs ratings to Dropbox now"
@@ -60,9 +77,9 @@ struct AlbumStatusButton: View {
         Haptics.tap()
         switch status {
         case .onlineOnly:
-            guard connectivity.mayTryNetwork else { alert = "Connect to the internet to download this album."; return }
+            guard connectivity.mayTryNetwork else { alert = "Connect to the internet to download this \(noun)."; return }
             guard DropboxAuth.shared.isSignedIn else { alert = "Sign in to Dropbox in Settings to download."; return }
-            downloads.download(album)
+            downloads.download(album, folder: folder)
         case .downloading:
             downloads.pause(album)
         case .paused:
@@ -76,7 +93,7 @@ struct AlbumStatusButton: View {
                 isRemoving = true
                 await sync.syncNow(force: true)
                 isRemoving = false
-                if (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 {
+                if pendingInScope > 0 {
                     alert = "Couldn't reach Dropbox. Will sync when you're back online."
                 }
             }
@@ -90,18 +107,18 @@ struct AlbumStatusButton: View {
     private func syncAndRemove() async {
         isRemoving = true
         defer { isRemoving = false }
-        if (sync.pendingCountByAlbum[album.externalID] ?? 0) > 0 {
+        if pendingInScope > 0 {
             guard connectivity.mayTryNetwork else {
                 alert = "You're offline. Ratings will sync when you're back online; the downloads are kept until then."
                 return
             }
             await sync.syncNow(force: true)
         }
-        guard (sync.pendingCountByAlbum[album.externalID] ?? 0) == 0 else {
+        guard pendingInScope == 0 else {
             alert = "Some ratings couldn't sync yet, so the downloads were kept. Try again in a moment."
             return
         }
-        downloads.removeDownloads(album)
+        downloads.removeDownloads(album, folder: folder)
         Haptics.success()
     }
 }

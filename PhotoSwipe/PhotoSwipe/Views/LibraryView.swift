@@ -35,7 +35,7 @@ struct LibraryView: View {
                     if expanded.contains(album.externalID) {
                         ForEach(flatten(folders, album: album), id: \.node.id) { entry in
                             NavigationLink(value: AlbumRoute(album: album, folder: entry.node.path)) {
-                                FolderRow(node: entry.node, depth: entry.depth,
+                                FolderRow(album: album, node: entry.node, depth: entry.depth,
                                           isExpanded: expanded.contains(key(album, entry.node))) {
                                     toggle(key(album, entry.node))
                                 }
@@ -271,6 +271,7 @@ struct FolderToggle: View {
 /// A subfolder of a Dropbox album, indented by depth. Opening it rates only
 /// that folder and the folders below it.
 struct FolderRow: View {
+    let album: ConnectedAlbum
     let node: FolderNode
     let depth: Int
     let isExpanded: Bool
@@ -300,6 +301,8 @@ struct FolderRow: View {
                 .foregroundStyle(Theme.inkSecondary)
             }
             Spacer(minLength: 0)
+            // Keep just this folder (and its subfolders) offline.
+            AlbumStatusButton(album: album, folder: node.path, size: 18)
         }
         .padding(.leading, CGFloat(depth) * 28)
         .padding(.vertical, 1)

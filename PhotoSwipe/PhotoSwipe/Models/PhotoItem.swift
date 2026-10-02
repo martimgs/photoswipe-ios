@@ -30,8 +30,7 @@ struct PhotoItem: Identifiable, Hashable {
 
     /// True if the photo is in `scope` or any folder below it (nil = whole album).
     func isInFolder(_ scope: String?) -> Bool {
-        guard let scope, !scope.isEmpty else { return true }
-        return folder == scope || folder.hasPrefix(scope + "/")
+        FolderScope.contains(scope, folder: folder)
     }
 
     static func == (a: PhotoItem, b: PhotoItem) -> Bool { a.id == b.id && a.source == b.source }

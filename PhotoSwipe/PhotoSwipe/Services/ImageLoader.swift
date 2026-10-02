@@ -19,7 +19,7 @@ final class ImageLoader {
 
     func image(for item: PhotoItem, pixelSize: CGSize, fill: Bool = true) async -> UIImage? {
         let maxPixels = max(pixelSize.width, pixelSize.height)
-        let key = "\(item.source.rawValue)|\(item.id)|\(Int(maxPixels))" as NSString
+        let key = "\(item.source.rawValue)|\(item.id)|\(Int(maxPixels))|\(fill)" as NSString
         if let cached = memory.object(forKey: key) { return cached }
 
         let image: UIImage?

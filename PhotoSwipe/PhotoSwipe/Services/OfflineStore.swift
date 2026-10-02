@@ -53,16 +53,18 @@ enum OfflineStore {
         try? FileManager.default.removeItem(at: localURL(for: fileID))
     }
 
-    /// Removes the local copy unless another connected album that is kept
-    /// offline (or downloading) also contains this file, e.g. a subfolder
-    /// connected on its own as well as through its parent.
+    /// Removes the local copy unless another connected album keeps this
+    /// file offline too (e.g. a subfolder connected on its own as well as
+    /// through its parent).
     @MainActor
     static func removeLocalCopyIfUnused(_ fileID: String, leaving albumID: String, context: ModelContext) {
         let others = (try? context.fetch(FetchDescriptor<DropboxFile>(
             predicate: #Predicate { $0.fileID == fileID && $0.albumID != albumID }))) ?? []
-        let offlineAlbums = Set(((try? context.fetch(FetchDescriptor<ConnectedAlbum>())) ?? [])
-            .filter { $0.offlineState != .onlineOnly }.map(\.externalID))
-        if others.contains(where: { offlineAlbums.contains($0.albumID) }) { return }
+        if !others.isEmpty {
+            let offline = Dictionary(((try? context.fetch(FetchDescriptor<ConnectedAlbum>())) ?? [])
+                .map { ($0.externalID, Set($0.offlineFolders)) }, uniquingKeysWith: { a, _ in a })
+            if others.contains(where: { offline[$0.albumID]?.contains($0.folderPath) == true }) { return }
+        }
         removeLocalCopy(fileID)
     }
 }
