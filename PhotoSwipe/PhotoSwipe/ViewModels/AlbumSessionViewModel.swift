@@ -145,9 +145,10 @@ final class AlbumSessionViewModel: ObservableObject {
 
     // MARK: Navigation
 
-    func jump(to item: PhotoItem) {
+    /// `remember: false` while scrubbing, which saves once at the end instead.
+    func jump(to item: PhotoItem, remember: Bool = true) {
         currentID = item.id
-        rememberPosition()
+        if remember { rememberPosition() }
     }
 
     func startOver() {
@@ -248,7 +249,7 @@ final class AlbumSessionViewModel: ObservableObject {
         }?.id
     }
 
-    private func rememberPosition() {
+    func rememberPosition() {
         album.lastPhotoID = currentID
         try? context?.save()
     }

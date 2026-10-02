@@ -38,24 +38,27 @@ struct PhotoCardView: View {
 
     /// Width / height of the photo. PhotoKit knows it up front; Dropbox
     /// photos use a placeholder until the image arrives.
-    private var aspect: CGFloat {
-        if let image, image.size.height > 0 { return image.size.width / image.size.height }
+    private func aspect(of shown: UIImage?) -> CGFloat {
         if let asset = item.asset, asset.pixelHeight > 0 {
             return CGFloat(asset.pixelWidth) / CGFloat(asset.pixelHeight)
         }
+        if let shown, shown.size.height > 0 { return shown.size.width / shown.size.height }
         return 3.0 / 4.0
     }
 
     var body: some View {
         GeometryReader { geo in
-            let fitted = Self.fit(aspect: aspect, in: geo.size)
+            // Anything already in memory shows on the very first frame.
+            let shown = image ?? ImageLoader.shared.cardPlaceholder(
+                for: item, fullPixelSize: pixelSize(fitting: geo.size))
+            let ratio = aspect(of: shown)
+            let fitted = Self.fit(aspect: ratio, in: geo.size)
             ZStack {
                 Theme.surface
-                if let image {
-                    Image(uiImage: image)
+                if let shown {
+                    Image(uiImage: shown)
                         .resizable()
                         .scaledToFit()
-                        .transition(.opacity)
                 } else {
                     ProgressView().tint(Theme.inkSecondary)
                 }
@@ -67,7 +70,7 @@ struct PhotoCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
             .shadow(color: .black.opacity(0.12), radius: 18, y: 10)
             .frame(width: geo.size.width, height: geo.size.height)
-            .animation(.easeOut(duration: 0.2), value: aspect)
+            .animation(.easeOut(duration: 0.2), value: ratio)
             .task(id: item.id) { await loadImage(fitting: geo.size) }
         }
         .accessibilityElement()
@@ -105,23 +108,28 @@ struct PhotoCardView: View {
 
     /// Request enough pixels to fill the available space whichever way
     /// the photo is oriented, uncropped.
-    private func loadImage(fitting cardSize: CGSize) async {
+    private func pixelSize(fitting cardSize: CGSize) -> CGSize {
         let side = max(cardSize.width, cardSize.height) * displayScale
-        let size = CGSize(width: side, height: side)
+        return CGSize(width: side, height: side)
+    }
 
-        // Show any cached image instantly — no blank frame while the exact size loads.
-        if let fast = ImageLoader.shared.bestAvailableSync(for: item) {
-            image = fast
+    /// Preview first, then the sharp image once the card has been current
+    /// for a moment, so photos scrubbed past never start a full-size decode.
+    private func loadImage(fitting cardSize: CGSize) async {
+        let loader = ImageLoader.shared
+        let full = pixelSize(fitting: cardSize)
+        if let sharp = loader.cachedImage(for: item, pixelSize: full, fill: false) {
+            image = sharp
+            return
         }
-
-        guard let img = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false) else { return }
-
-        // If we already had something to show, swap silently (prefetch hit or placeholder).
-        // Only animate when going from blank to first image.
-        if image != nil {
-            image = img
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) { image = img }
+        if let preview = await loader.image(for: item, pixelSize: ImageLoader.previewSize, fill: false) {
+            guard !Task.isCancelled else { return }
+            image = preview
         }
+        try? await Task.sleep(for: .milliseconds(120))
+        guard !Task.isCancelled,
+              let sharp = await loader.image(for: item, pixelSize: full, fill: false),
+              !Task.isCancelled else { return }
+        image = sharp
     }
 }

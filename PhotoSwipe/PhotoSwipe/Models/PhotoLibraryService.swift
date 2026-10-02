@@ -5,7 +5,7 @@ import UIKit
 /// image loading, and writing star ratings. Never deletes anything.
 /// All mutations go through `PHPhotoLibrary.performChanges`.
 final class PhotoLibraryService {
-    private let imageManager = PHCachingImageManager()
+    private let imageManager = PHImageManager.default()
 
     // MARK: Authorization
 
@@ -48,16 +48,6 @@ final class PhotoLibraryService {
     }
 
     // MARK: Image loading
-
-    /// Pre-warm PhotoKit's disk and memory cache for the given assets.
-    func startCaching(_ assets: [PHAsset], targetSize: CGSize) {
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .fastFormat
-        options.resizeMode = .fast
-        options.isNetworkAccessAllowed = true
-        imageManager.startCachingImages(for: assets, targetSize: targetSize,
-                                        contentMode: .aspectFit, options: options)
-    }
 
     func requestImage(for asset: PHAsset, targetSize: CGSize,
                       contentMode: PHImageContentMode = .aspectFill) async -> UIImage? {

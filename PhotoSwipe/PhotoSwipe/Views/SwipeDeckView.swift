@@ -20,6 +20,8 @@ struct SwipeDeckView: View {
     @State private var fullScreen: PhotoItem?
     /// Largest pixel dimension of the card area, used for prefetch sizing.
     @State private var cardPixelSide: CGFloat = 0
+    /// Finger on the filmstrip (or its momentum): cards switch without animation.
+    @State private var scrubbing = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
 
@@ -42,15 +44,36 @@ struct SwipeDeckView: View {
         .onChange(of: vm.currentID, initial: true) { _, _ in prefetchAround() }
     }
 
+    /// Nearest photo first: filmstrip thumbnails and card previews for a wide
+    /// window, sharp card images only close by and only when not scrubbing.
     private func prefetchAround() {
-        guard cardPixelSide > 0 else { return }
         let d = vm.deck
         guard let idx = d.firstIndex(where: { $0.id == vm.currentID }) else { return }
-        let lo = max(0, idx - 12)
-        let hi = min(d.count - 1, idx + 12)
-        let items = Array(d[lo...hi])
-        let px = CGSize(width: cardPixelSide, height: cardPixelSide)
-        ImageLoader.shared.prefetch(items, pixelSize: px)
+        let thumb = CGSize(width: FilmstripView.height * displayScale, height: FilmstripView.height * displayScale)
+        let full = CGSize(width: cardPixelSide, height: cardPixelSide)
+        var requests: [ImageLoader.Request] = []
+        for distance in 0...40 {
+            for i in Set([idx - distance, idx + distance]).sorted() where d.indices.contains(i) {
+                if !scrubbing, cardPixelSide > 0, distance <= 5 {
+                    requests.append(.init(item: d[i], pixelSize: full, fill: false))
+                }
+                requests.append(.init(item: d[i], pixelSize: ImageLoader.previewSize, fill: false))
+                requests.append(.init(item: d[i], pixelSize: thumb, fill: true))
+            }
+        }
+        ImageLoader.shared.prefetch(requests)
+    }
+
+    private var filmstrip: some View {
+        FilmstripView(photos: vm.deck, currentID: vm.currentID,
+                      onSelect: { vm.jump(to: $0, remember: !scrubbing) },
+                      onScrubbingChanged: { active in
+                          scrubbing = active
+                          if !active {
+                              vm.rememberPosition()
+                              prefetchAround()
+                          }
+                      })
     }
 
     private var portrait: some View {
@@ -65,7 +88,7 @@ struct SwipeDeckView: View {
             } else {
                 endState
             }
-            FilmstripView(photos: vm.deck, currentID: vm.currentID) { vm.jump(to: $0) }
+            filmstrip
                 .padding(.top, 14)
             actionBar
         }
@@ -81,7 +104,7 @@ struct SwipeDeckView: View {
                 } else {
                     endState
                 }
-                FilmstripView(photos: vm.deck, currentID: vm.currentID) { vm.jump(to: $0) }
+                filmstrip
             }
             .padding(.vertical, 10)
             .padding(.leading, 16)
@@ -157,7 +180,7 @@ struct SwipeDeckView: View {
 
     private func card(_ current: PhotoItem) -> some View {
         ZStack {
-            if let next = vm.next {
+            if !scrubbing, let next = vm.next {
                 PhotoCardView(item: next)
                     .scaleEffect(0.95)
                     .rotationEffect(.degrees(-3))
@@ -176,7 +199,7 @@ struct SwipeDeckView: View {
                 .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity),
                                         removal: .opacity))
         }
-        .animation(.cardSpring, value: vm.currentID)
+        .animation(scrubbing ? nil : .cardSpring, value: vm.currentID)
         .frame(maxHeight: .infinity)
         // Measure the card area so prefetchAround() uses the right pixel size.
         .background(

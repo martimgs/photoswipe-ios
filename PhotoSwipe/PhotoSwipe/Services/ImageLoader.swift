@@ -7,91 +7,106 @@ import ImageIO
 final class ImageLoader {
     static let shared = ImageLoader()
 
+    /// Low-res, uncropped version shown on the card while scrubbing and
+    /// until the sharp card-size image is ready.
+    static let previewSize = CGSize(width: 400, height: 400)
+
+    struct Request {
+        let item: PhotoItem
+        let pixelSize: CGSize
+        let fill: Bool
+    }
+
     private let memory = NSCache<NSString, UIImage>()
     private let photos = PhotoLibraryService()
+    /// Loads in progress, so a card and a prefetch never decode the same image twice.
+    private var loads: [String: Task<UIImage?, Never>] = [:]
+    private var queue: [Request] = []
+    private var prefetching = 0
+    private let maxPrefetches = 4
 
-    /// Largest image seen for each item ID — fast placeholder while the
-    /// card-size image loads or is pre-warmed.
-    private var bestAvailableByID: [String: UIImage] = [:]
-
-    /// Active prefetch tasks, keyed by item ID.
-    private var prefetchTasks: [String: Task<Void, Never>] = [:]
-
-    /// Fetches a Dropbox thumbnail for online-only photos. Set in a later step.
+    /// Fetches a Dropbox thumbnail for online-only photos.
     var dropboxThumbnail: ((_ fileID: String, _ maxPixels: CGFloat) async -> UIImage?)?
 
     private init() {
-        memory.countLimit = 300
+        memory.countLimit = 800
+        memory.totalCostLimit = 300 * 1024 * 1024
+    }
+
+    /// Already in memory at exactly this size — no waiting.
+    func cachedImage(for item: PhotoItem, pixelSize: CGSize, fill: Bool) -> UIImage? {
+        memory.object(forKey: Self.key(item, pixelSize, fill) as NSString)
+    }
+
+    /// The sharpest uncropped image of `item` already in memory.
+    func cardPlaceholder(for item: PhotoItem, fullPixelSize: CGSize) -> UIImage? {
+        cachedImage(for: item, pixelSize: fullPixelSize, fill: false)
+            ?? cachedImage(for: item, pixelSize: Self.previewSize, fill: false)
     }
 
     func image(for item: PhotoItem, pixelSize: CGSize, fill: Bool = true) async -> UIImage? {
-        let maxPixels = max(pixelSize.width, pixelSize.height)
-        let key = cacheKey(item: item, maxPixels: maxPixels, fill: fill)
-        if let cached = memory.object(forKey: key) { return cached }
+        let key = Self.key(item, pixelSize, fill)
+        if let cached = memory.object(forKey: key as NSString) { return cached }
+        if let running = loads[key] { return await running.value }
 
-        let image: UIImage?
-        switch item.source {
-        case .applePhotos:
-            guard let asset = item.asset else { return nil }
-            image = await photos.requestImage(for: asset, targetSize: pixelSize,
-                                              contentMode: fill ? .aspectFill : .aspectFit)
-        case .dropbox:
-            if OfflineStore.hasLocalCopy(item.id) {
-                image = await Self.downsample(OfflineStore.localURL(for: item.id), maxPixels: maxPixels)
-            } else {
-                // Online-only photo: needs the network (cached thumbnails still load).
-                image = await dropboxThumbnail?(item.id, maxPixels)
-            }
-        }
-        if let image {
-            memory.setObject(image, forKey: key)
-            updateBestAvailable(item.id, image: image)
-        }
+        let task = Task { await self.load(item, pixelSize: pixelSize, fill: fill) }
+        loads[key] = task
+        let image = await task.value
+        loads[key] = nil
+        if let image { memory.setObject(image, forKey: key as NSString, cost: Self.cost(of: image)) }
         return image
     }
 
-    /// Returns the largest image already in memory for this item — no async, no network.
-    func bestAvailableSync(for item: PhotoItem) -> UIImage? {
-        bestAvailableByID[item.id]
-    }
-
-    /// Pre-warm the cache for `items` at card pixel size. Cancels tasks for
-    /// items that left the window; skips items already cached.
-    func prefetch(_ items: [PhotoItem], pixelSize: CGSize) {
-        let newIDs = Set(items.map(\.id))
-
-        // Cancel tasks for items that left the prefetch window.
-        for id in Array(prefetchTasks.keys) where !newIDs.contains(id) {
-            prefetchTasks[id]?.cancel()
-            prefetchTasks.removeValue(forKey: id)
-        }
-
-        // Ask PhotoKit to pre-warm its own cache for Apple Photos.
-        let appleAssets = items.compactMap(\.asset)
-        if !appleAssets.isEmpty {
-            photos.startCaching(appleAssets, targetSize: pixelSize)
-        }
-
-        let maxPixels = max(pixelSize.width, pixelSize.height)
-        for item in items {
-            guard prefetchTasks[item.id] == nil else { continue }
-            let key = cacheKey(item: item, maxPixels: maxPixels, fill: false)
-            if memory.object(forKey: key) != nil { continue }
-            let id = item.id
-            prefetchTasks[id] = Task { [weak self] in
-                guard let self else { return }
-                _ = await self.image(for: item, pixelSize: pixelSize, fill: false)
-                self.prefetchTasks.removeValue(forKey: id)
-            }
-        }
+    /// Replace the prefetch queue (nearest photo first). Requests from an
+    /// earlier call that haven't started are dropped, so fast scrubbing
+    /// never builds a backlog.
+    func prefetch(_ requests: [Request]) {
+        queue = requests
+        pump()
     }
 
     /// Drop cached images, e.g. after downloads are removed.
     func forgetAll() {
         memory.removeAllObjects()
-        bestAvailableByID.removeAll()
-        for task in prefetchTasks.values { task.cancel() }
-        prefetchTasks.removeAll()
+        queue.removeAll()
+    }
+
+    private func pump() {
+        while prefetching < maxPrefetches, !queue.isEmpty {
+            let r = queue.removeFirst()
+            let key = Self.key(r.item, r.pixelSize, r.fill)
+            guard memory.object(forKey: key as NSString) == nil, loads[key] == nil else { continue }
+            prefetching += 1
+            Task {
+                _ = await image(for: r.item, pixelSize: r.pixelSize, fill: r.fill)
+                prefetching -= 1
+                pump()
+            }
+        }
+    }
+
+    private func load(_ item: PhotoItem, pixelSize: CGSize, fill: Bool) async -> UIImage? {
+        let maxPixels = max(pixelSize.width, pixelSize.height)
+        switch item.source {
+        case .applePhotos:
+            guard let asset = item.asset else { return nil }
+            return await photos.requestImage(for: asset, targetSize: pixelSize,
+                                             contentMode: fill ? .aspectFill : .aspectFit)
+        case .dropbox:
+            if OfflineStore.hasLocalCopy(item.id) {
+                return await Self.downsample(OfflineStore.localURL(for: item.id), maxPixels: maxPixels)
+            }
+            // Online-only photo: needs the network (cached thumbnails still load).
+            return await dropboxThumbnail?(item.id, maxPixels)
+        }
+    }
+
+    private static func key(_ item: PhotoItem, _ pixelSize: CGSize, _ fill: Bool) -> String {
+        "\(item.source.rawValue)|\(item.id)|\(Int(max(pixelSize.width, pixelSize.height)))|\(fill)"
+    }
+
+    private static func cost(of image: UIImage) -> Int {
+        Int(image.size.width * image.scale * image.size.height * image.scale * 4)
     }
 
     /// Decodes a file at roughly the size needed, off the main thread.
@@ -106,17 +121,5 @@ final class ImageLoader {
             guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
             return UIImage(cgImage: cg)
         }.value
-    }
-
-    private func cacheKey(item: PhotoItem, maxPixels: CGFloat, fill: Bool) -> NSString {
-        "\(item.source.rawValue)|\(item.id)|\(Int(maxPixels))|\(fill)" as NSString
-    }
-
-    private func updateBestAvailable(_ id: String, image: UIImage) {
-        let newPixels = image.size.width * image.size.height
-        let existingPixels = bestAvailableByID[id].map { $0.size.width * $0.size.height } ?? 0
-        if newPixels > existingPixels {
-            bestAvailableByID[id] = image
-        }
     }
 }
