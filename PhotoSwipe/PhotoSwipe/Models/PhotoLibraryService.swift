@@ -104,6 +104,13 @@ final class PhotoLibraryService {
         }
     }
 
+    func setRating(_ asset: PHAsset, _ rating: PHAsset.Rating) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            let req = PHAssetChangeRequest(for: asset)
+            req.rating = rating
+        }
+    }
+
     func deleteAssets(_ assets: [PHAsset]) async throws {
         guard !assets.isEmpty else { return }
         try await PHPhotoLibrary.shared().performChanges {

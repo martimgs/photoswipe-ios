@@ -2,9 +2,11 @@ import SwiftUI
 import Photos
 
 /// A single photo card: lazily-loaded image with a glass edge and a colored
-/// glow + stamp that grows with the active swipe direction.
+/// glow + stamp that grows with the active swipe direction. Shows the photo's
+/// current star rating in the corner.
 struct PhotoCardView: View {
     let asset: PHAsset
+    var rating: PHAsset.Rating = .unset
     var translation: CGSize = .zero
     var isTop: Bool = true
 
@@ -12,8 +14,8 @@ struct PhotoCardView: View {
     @State private var appeared = false
     private let service = PhotoLibraryService()
 
-    private var hShift: CGFloat { translation.width / Theme.swipeThreshold }   // +keep / -trash
-    private var vShift: CGFloat { -translation.height / Theme.swipeThreshold }  // +favorite
+    private var hShift: CGFloat { translation.width / Theme.swipeThreshold }   // +1 star / −1 star
+    private var vShift: CGFloat { -translation.height / Theme.swipeThreshold }  // + = 5 stars, − = reject
 
     var body: some View {
         GeometryReader { geo in
@@ -69,39 +71,57 @@ struct PhotoCardView: View {
             LinearGradient(colors: [.clear, .black.opacity(0.6)],
                            startPoint: .center, endPoint: .bottom)
                 .frame(height: 150)
-                .overlay(alignment: .bottomLeading) {
-                    if let date = asset.creationDate {
-                        Text(date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.92))
-                            .padding(20)
+                .overlay(alignment: .bottom) {
+                    HStack {
+                        if let date = asset.creationDate {
+                            Text(date.formatted(date: .abbreviated, time: .omitted))
+                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                .foregroundStyle(.white.opacity(0.92))
+                        }
+                        Spacer()
+                        stars
                     }
+                    .padding(20)
                 }
         }
         .allowsHitTesting(false)
     }
 
+    private var stars: some View {
+        HStack(spacing: 3) {
+            ForEach(1...5, id: \.self) { i in
+                Image(systemName: i <= rating.rawValue ? "star.fill" : "star")
+                    .foregroundStyle(i <= rating.rawValue ? Theme.favorite : .white.opacity(0.45))
+            }
+        }
+        .font(.system(size: 14, weight: .bold))
+        .accessibilityLabel(rating == .unset ? "Unrated" : "\(rating.rawValue) stars")
+    }
+
     private var glowColor: Color {
-        if vShift > abs(hShift) { return Theme.favorite }
-        return hShift >= 0 ? Theme.keep : Theme.trash
+        if abs(vShift) > abs(hShift) { return vShift > 0 ? Theme.favorite : Theme.trash }
+        return hShift >= 0 ? Theme.keep : Theme.album
     }
     private var glowStrength: Double {
-        Double(max(abs(hShift), max(vShift, 0)))
+        Double(max(abs(hShift), abs(vShift)))
     }
 
     private var intentLayer: some View {
-        ZStack {
-            stamp("KEEP", Theme.keep, rotation: -16, alignment: .topLeading,
-                  opacity: max(0, hShift))
-            stamp("NOPE", Theme.trash, rotation: 16, alignment: .topTrailing,
-                  opacity: max(0, -hShift))
-            // up = favorite, down = later (skip)
+        // Only the dominant axis stamps, so a slightly diagonal swipe
+        // doesn't flash the perpendicular label.
+        let vertical = abs(vShift) > abs(hShift)
+        return ZStack {
+            stamp("+1 ★", Theme.keep, rotation: -16, alignment: .topLeading,
+                  opacity: vertical ? 0 : max(0, hShift))
+            stamp("−1 ★", Theme.album, rotation: 16, alignment: .topTrailing,
+                  opacity: vertical ? 0 : max(0, -hShift))
+            // up = 5 stars, down = reject
             if translation.height <= 0 {
-                stamp("FAVORITE", Theme.favorite, rotation: 0, alignment: .top,
-                      opacity: max(0, vShift))
+                stamp("5 ★", Theme.favorite, rotation: 0, alignment: .top,
+                      opacity: vertical ? max(0, vShift) : 0)
             } else {
-                stamp("LATER", .white.opacity(0.9), rotation: 0, alignment: .bottom,
-                      opacity: max(0, translation.height / Theme.swipeThreshold))
+                stamp("REJECT", Theme.trash, rotation: 0, alignment: .bottom,
+                      opacity: vertical ? max(0, -vShift) : 0)
             }
         }
         .padding(24)

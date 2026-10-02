@@ -3,12 +3,15 @@ import Photos
 
 /// The swiping surface. Header + action bar are pinned via `safeAreaInset`, so
 /// the layout adapts to every phone (notch, Dynamic Island, home-indicator)
-/// without clipping. Left = trash, right = keep, up = favorite, album button =
-/// album sheet.
+/// without clipping. Right = +1 star, left = −1 star, up = 5 stars,
+/// down = reject (queue for deletion).
 struct SwipeDeckView: View {
     @ObservedObject var vm: SwipeDeckViewModel
     @State private var drag: CGSize = .zero
     @State private var showAlbumSheet = false
+
+    /// Album filing is hidden for now; flip to bring the button back.
+    private let showAlbumButton = false
 
     var body: some View {
         deck
@@ -136,7 +139,7 @@ struct SwipeDeckView: View {
         ZStack {
             ForEach(Array(stride(from: 2, through: 1, by: -1)), id: \.self) { depth in
                 if let asset = vm.peek(depth) {
-                    PhotoCardView(asset: asset, isTop: false)
+                    PhotoCardView(asset: asset, rating: vm.rating(of: asset), isTop: false)
                         .scaleEffect(1 - CGFloat(depth) * 0.05)
                         .offset(y: CGFloat(depth) * 14)
                         .opacity(depth == 2 ? 0.5 : 0.85)
@@ -144,7 +147,8 @@ struct SwipeDeckView: View {
                 }
             }
             if let current = vm.current {
-                PhotoCardView(asset: current, translation: drag, isTop: true)
+                PhotoCardView(asset: current, rating: vm.rating(of: current),
+                              translation: drag, isTop: true)
                     .id(current.localIdentifier)
                     .offset(drag)
                     .rotationEffect(.degrees(Double(drag.width / 16)), anchor: .bottom)
@@ -165,13 +169,13 @@ struct SwipeDeckView: View {
             .onEnded { value in
                 let t = value.translation
                 if t.width > Theme.swipeThreshold {
-                    fling(.right, decision: .keep)
+                    fling(.right, rating: .up)
                 } else if t.width < -Theme.swipeThreshold {
-                    fling(.left, decision: .trash)
+                    fling(.left, rating: .down)
                 } else if t.height < -Theme.swipeThreshold {
-                    fling(.up, decision: .favorite)
+                    fling(.up, rating: .max)
                 } else if t.height > Theme.swipeThreshold {
-                    fling(.down, decision: .skip)
+                    fling(.down, decision: .trash)
                 } else {
                     Haptics.soft()
                     withAnimation(.cardSpring) { drag = .zero }
@@ -183,12 +187,15 @@ struct SwipeDeckView: View {
 
     private var actionBar: some View {
         HStack(spacing: 18) {
-            actionButton("trash", Theme.trash, Theme.trash2) { fling(.left, decision: .trash) }
-            actionButton("rectangle.stack.badge.plus", Theme.album, Theme.album2, big: false) {
-                Haptics.tap(); showAlbumSheet = true
+            actionButton("minus", Theme.album, Theme.album2) { fling(.left, rating: .down) }
+            actionButton("xmark", Theme.trash, Theme.trash2, big: false) { fling(.down, decision: .trash) }
+            if showAlbumButton {
+                actionButton("rectangle.stack.badge.plus", Theme.album, Theme.album2, big: false) {
+                    Haptics.tap(); showAlbumSheet = true
+                }
             }
-            actionButton("star.fill", Theme.favorite, Theme.favorite2, big: false) { fling(.up, decision: .favorite) }
-            actionButton("heart.fill", Theme.keep, Theme.keep2) { fling(.right, decision: .keep) }
+            actionButton("star.fill", Theme.favorite, Theme.favorite2, big: false) { fling(.up, rating: .max) }
+            actionButton("plus", Theme.keep, Theme.keep2) { fling(.right, rating: .up) }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 14)
@@ -226,6 +233,17 @@ struct SwipeDeckView: View {
         case .skip: Haptics.soft()
         default: Haptics.tap(.light)
         }
+        fling(dir) { vm.decide(decision) }
+    }
+
+    /// The new rating is computed when the card lands, so it always builds on
+    /// the latest value (e.g. after an undo).
+    private func fling(_ dir: FlingDir, rating step: RatingStep) {
+        if step == .max { Haptics.success() } else { Haptics.tap(.light) }
+        fling(dir) { vm.rate(step) }
+    }
+
+    private func fling(_ dir: FlingDir, commit: @escaping () -> Void) {
         let target: CGSize
         switch dir {
         case .left:  target = CGSize(width: -760, height: 80)
@@ -237,7 +255,7 @@ struct SwipeDeckView: View {
         // Let the card fly off before committing the decision and resetting.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
-            vm.decide(decision)
+            commit()
             drag = .zero
         }
     }

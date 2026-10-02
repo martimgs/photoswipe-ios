@@ -78,15 +78,13 @@ struct ReviewView: View {
 
     private var statsCard: some View {
         VStack(spacing: 0) {
-            statRow("heart.fill", Theme.keep, "Kept", vm.keptCount)
+            statRow("plus", Theme.keep, "Rated up", vm.ratedCount(.up))
             divider
-            statRow("star.fill", Theme.favorite, "Favorited", vm.favoritedCount)
+            statRow("minus", Theme.album, "Rated down", vm.ratedCount(.down))
             divider
-            statRow("rectangle.stack.fill", Theme.album, "Filed to albums", vm.albumedCount)
+            statRow("star.fill", Theme.favorite, "Set to 5 stars", vm.ratedCount(.max))
             divider
-            statRow("clock.arrow.circlepath", .white.opacity(0.7), "Skipped for later", vm.skippedCount)
-            divider
-            statRow("trash.fill", Theme.trash, "To delete", vm.pendingTrash.count)
+            statRow("xmark", Theme.trash, "Rejected", vm.pendingTrash.count)
         }
         .padding(.vertical, 6)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))

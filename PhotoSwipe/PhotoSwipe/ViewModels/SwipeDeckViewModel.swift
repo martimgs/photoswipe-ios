@@ -39,6 +39,10 @@ final class SwipeDeckViewModel: ObservableObject {
     // Persisted trash queue (survives pause / quit)
     @Published private(set) var pendingTrashIDs: Set<String> = []
 
+    // Ratings written this session. `PHAsset` is an immutable snapshot, so its
+    // `rating` goes stale after a write — this map is the source of truth.
+    @Published private(set) var ratingOverrides: [String: PHAsset.Rating] = [:]
+
     private let service = PhotoLibraryService()
     private let store = ReviewStore()
     private let statsStore = StatsStore()
@@ -58,6 +62,20 @@ final class SwipeDeckViewModel: ObservableObject {
     var skippedCount: Int { history.filter { $0.decision == .skip }.count }
     var favoritedCount: Int { history.filter { if case .favorite = $0.decision { return true }; return false }.count }
     var albumedCount: Int { history.filter { if case .album = $0.decision { return true }; return false }.count }
+    func ratedCount(_ step: RatingStep) -> Int {
+        history.filter { if case .rate(step, _, _) = $0.decision { return true }; return false }.count
+    }
+
+    func rating(of asset: PHAsset) -> PHAsset.Rating {
+        ratingOverrides[asset.localIdentifier] ?? asset.rating
+    }
+
+    /// Apply a rating gesture to the current photo.
+    func rate(_ step: RatingStep) {
+        guard let asset = current else { return }
+        let from = rating(of: asset)
+        decide(.rate(step, from: from, to: step.apply(to: from)))
+    }
 
     var current: PHAsset? { peek(0) }
     var next: PHAsset? { peek(1) }
@@ -188,6 +206,9 @@ final class SwipeDeckViewModel: ObservableObject {
             Task { try? await service.add(asset, toAlbumWithLocalIdentifier: id) }
         case .keep:
             store.mark(asset.localIdentifier)
+        case .rate(_, let from, let to):
+            store.mark(asset.localIdentifier)
+            setRating(asset, from: from, to: to)
         case .trash:
             store.mark(asset.localIdentifier)
             trashStore.add(asset.localIdentifier)
@@ -220,6 +241,9 @@ final class SwipeDeckViewModel: ObservableObject {
             Task { try? await service.setFavorite(last.asset, false) }
         case .keep, .album:
             store.unmark(last.asset.localIdentifier)
+        case .rate(_, let from, let to):
+            store.unmark(last.asset.localIdentifier)
+            setRating(last.asset, from: to, to: from)
         case .trash:
             store.unmark(last.asset.localIdentifier)
             trashStore.remove(last.asset.localIdentifier)
@@ -227,6 +251,12 @@ final class SwipeDeckViewModel: ObservableObject {
         case .skip:
             break
         }
+    }
+
+    private func setRating(_ asset: PHAsset, from: PHAsset.Rating, to: PHAsset.Rating) {
+        ratingOverrides[asset.localIdentifier] = to
+        guard from != to else { return }   // e.g. −1 on an unrated photo
+        Task { try? await service.setRating(asset, to) }
     }
 
     // MARK: Albums
