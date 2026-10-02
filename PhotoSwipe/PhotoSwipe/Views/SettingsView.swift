@@ -5,6 +5,8 @@ import Photos
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @EnvironmentObject private var dropbox: DropboxAuth
+    @State private var confirmSignOut = false
 
     var body: some View {
         NavigationStack {
@@ -24,6 +26,33 @@ struct SettingsView: View {
                 .listRowBackground(Color.white.opacity(0.6))
 
                 Section {
+                    if dropbox.isSignedIn {
+                        LabeledContent("Signed in as") {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(dropbox.accountName ?? "Dropbox user")
+                                if let email = dropbox.accountEmail {
+                                    Text(email).font(.footnote).foregroundStyle(Theme.inkSecondary)
+                                }
+                            }
+                        }
+                        Button("Sign Out", role: .destructive) { confirmSignOut = true }
+                    } else {
+                        Button("Sign In to Dropbox") { dropbox.signIn() }
+                    }
+                } header: {
+                    Text("Dropbox account")
+                } footer: {
+                    if let error = dropbox.lastError {
+                        Text(error)
+                    } else {
+                        Text(dropbox.isSignedIn
+                             ? "Signing out keeps your albums, ratings and downloaded photos in PhotoSwipe."
+                             : "Sign in once to connect Dropbox folders.")
+                    }
+                }
+                .listRowBackground(Color.white.opacity(0.6))
+
+                Section {
                     LabeledContent("Version", value: version)
                 } footer: {
                     Text("PhotoSwipe never deletes photos. Rejecting only hides a photo inside this app.")
@@ -32,6 +61,11 @@ struct SettingsView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Theme.paper)
+            .confirmationDialog("Sign out of Dropbox?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+                Button("Sign Out", role: .destructive) { dropbox.signOut() }
+            } message: {
+                Text("Your Dropbox albums, ratings and downloaded photos stay in PhotoSwipe.")
+            }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
