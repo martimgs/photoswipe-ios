@@ -47,8 +47,9 @@ flick, then review your picks in a grid filtered by rating.
 
 ### Review grid
 - **All**, **Selected** and **Rejected** tabs, with each photo's stars underneath.
-- Filter by minimum rating (3+, 4+, 5) in both the swipe and grid views. The
+- Filter by minimum rating (0+ through 5) in both the swipe and grid views. The
   filter is always your choice and never applied automatically.
+- Sort the grid by album order or by rating, highest or lowest first.
 - Restore rejected photos from the Rejected tab.
 
 ## Gesture cheat-sheet
@@ -58,7 +59,7 @@ flick, then review your picks in a grid filtered by rating.
 | Swipe **right** | +1 star (max 5) |
 | Swipe **left** | −1 star (min unrated) |
 | Swipe **up** / **heart** button | Pick: set to 5 stars |
-| Swipe **down** / **X** button | Reject: hide in PhotoSwipe only |
+| Swipe **down** / **X** button | Reject: set to 0 stars and hide in PhotoSwipe (never deleted) |
 | Tap a **star** | Set an exact rating (stays on the photo) |
 | Tap a **filmstrip** thumbnail | Jump to that photo |
 | **Undo** | Revert the last decision |

@@ -6,8 +6,9 @@ import Photos
 enum Decision: Equatable {
     /// Star rating change. `from` is kept so undo restores the exact previous value.
     case rate(RatingStep, from: PHAsset.Rating, to: PHAsset.Rating)
-    /// Hidden inside this app only. Never deletes the photo.
-    case reject
+    /// Hidden inside this app only and set to 0 stars. Never deletes the
+    /// photo. `from` is the rating before, so undo can restore it.
+    case reject(from: PHAsset.Rating)
 }
 
 /// How a rating was changed: right = +1, left = −1, up/heart = pick (5),

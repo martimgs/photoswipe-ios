@@ -27,7 +27,9 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
 - Large rounded photo card, 5-star row below (tap = set exact rating), scrollable filmstrip
   (tap to jump), X (reject) and heart (pick) buttons, Undo.
 - Gestures apply to the current photo, then advance:
-  right = +1 star, left = −1 star (min 0), up = pick (5 stars), down = reject.
+  right = +1 star, left = −1 star (min 0), up = pick (5 stars), down = reject
+  (hides the photo **and sets it to 0 stars**; Undo restores the previous rating,
+  Restore from the Rejected tab leaves it at 0).
   X = down, heart = up.
 - While dragging, an overlay on the card shows the change (e.g. a large star).
 
@@ -36,10 +38,12 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
 - Subtitle shows the active filter, e.g. "84 selected • 4+ stars".
 - Tabs: **All**, **Selected** (filtered by min rating), **Rejected** (mockup says "Trash" — use
   "Rejected"). Un-reject from the Rejected tab.
+- Sort (in "…"): Album Order, Highest Rated First, Lowest Rated First. Ties keep album order.
 
 ### Filtering
 - Every photo stays in the pool except rejected ones.
-- Min-rating filter (Any / 3+ / 4+ / 5) in swipe and grid; always a user choice, never automatic.
+- Min-rating filter 0+ (all) / 1+ / 2+ / 3+ / 4+ / 5 in swipe and grid; always a user choice,
+  never automatic.
 
 ## Data
 - **Ratings** for Apple Photos albums are written to the real asset with the iOS 27 PhotoKit

@@ -153,7 +153,7 @@ struct SwipeDeckView: View {
                             message: vm.minRating == 0
                                 ? "Every photo in this album is rejected. Restore some from the grid."
                                 : "No photos match \(RatingFilter.label(vm.minRating)).",
-                            button: vm.minRating == 0 ? "Open Grid" : "Show Any Rating") {
+                            button: vm.minRating == 0 ? "Open Grid" : "Show All Photos") {
                     if vm.minRating == 0 { onOpenGrid() } else { vm.minRating = 0 }
                 }
             } else {

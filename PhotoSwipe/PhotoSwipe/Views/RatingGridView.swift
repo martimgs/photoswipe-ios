@@ -8,6 +8,19 @@ struct RatingGridView: View {
     @ObservedObject var vm: AlbumSessionViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var tab: Tab = .selected
+    @State private var sort: Sort = .album
+
+    enum Sort: CaseIterable {
+        case album, highest, lowest
+
+        var title: String {
+            switch self {
+            case .album: return "Album Order"
+            case .highest: return "Highest Rated First"
+            case .lowest: return "Lowest Rated First"
+            }
+        }
+    }
 
     enum Tab: CaseIterable {
         case all, selected, rejected
@@ -29,11 +42,25 @@ struct RatingGridView: View {
         }
     }
 
-    /// Selected means rated at or above the filter; with no filter, any
-    /// rating (1+ star) counts as selected.
-    private var selectedMin: Int { max(vm.minRating, 1) }
+    private var selectedMin: Int { vm.minRating }
 
+    /// Filtered by tab, then sorted. Ties keep album order.
     private var items: [PHAsset] {
+        let filtered = filteredItems
+        switch sort {
+        case .album:
+            return filtered
+        case .highest, .lowest:
+            let ascending = sort == .lowest
+            return filtered.enumerated().sorted { a, b in
+                let ra = vm.rating(of: a.element).rawValue, rb = vm.rating(of: b.element).rawValue
+                if ra != rb { return ascending ? ra < rb : ra > rb }
+                return a.offset < b.offset
+            }.map(\.element)
+        }
+    }
+
+    private var filteredItems: [PHAsset] {
         switch tab {
         case .all:
             return vm.photos.filter { !vm.isRejected($0) }
@@ -103,17 +130,24 @@ struct RatingGridView: View {
                 .accessibilityLabel("Back")
                 Spacer()
                 Menu {
-                    Picker("Selected", selection: $vm.minRating) {
-                        ForEach(RatingFilter.options, id: \.self) { min in
-                            Text(min == 0 ? "Any rating (1+ stars)" : RatingFilter.label(min)).tag(min)
+                    Picker("Sort", selection: $sort) {
+                        ForEach(Sort.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    Divider()
+                    Menu {
+                        Picker("Selected", selection: $vm.minRating) {
+                            ForEach(RatingFilter.options, id: \.self) { Text(RatingFilter.label($0)).tag($0) }
                         }
+                    } label: {
+                        Label("Selected: \(RatingFilter.label(vm.minRating))",
+                              systemImage: "line.3.horizontal.decrease")
                     }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 19))
                         .frame(width: 44, height: 44)
                 }
-                .accessibilityLabel("Filter")
+                .accessibilityLabel("Sort and filter")
             }
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 8)

@@ -37,11 +37,12 @@ struct StarRatingView: View {
 
 /// The minimum-rating filter options shared by swipe and grid.
 enum RatingFilter {
-    static let options = [0, 3, 4, 5]
+    /// Minimum ratings 0–5. 0 means every photo that isn't rejected.
+    static let options = Array(0...5)
 
     static func label(_ min: Int) -> String {
         switch min {
-        case 0: return "Any rating"
+        case 0: return "0+ stars (all)"
         case 5: return "5 stars"
         default: return "\(min)+ stars"
         }

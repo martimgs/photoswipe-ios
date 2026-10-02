@@ -139,14 +139,16 @@ final class AlbumSessionViewModel: ObservableObject {
         record(.rate(.exact(value), from: from, to: value), on: asset)
     }
 
-    /// Swipe down or X: hide the photo in this app (never deletes it), then advance.
+    /// Swipe down or X: set to 0 stars and hide the photo in this app (never
+    /// deletes it), then advance.
     func reject() {
         guard let asset = current else { return }
-        record(.reject, on: asset)
+        record(.reject(from: rating(of: asset)), on: asset)
         advance(from: asset)
     }
 
-    /// Bring a rejected photo back into the pool (grid's Rejected tab).
+    /// Bring a rejected photo back into the pool (grid's Rejected tab). It
+    /// stays at 0 stars; only Undo restores the earlier rating.
     func unreject(_ asset: PHAsset) {
         rejectedIDs.remove(asset.localIdentifier)
         persistRejected(asset.localIdentifier, false)
@@ -158,8 +160,9 @@ final class AlbumSessionViewModel: ObservableObject {
         switch last.decision {
         case .rate(_, let from, let to):
             writeRating(last.asset, from: to, to: from)
-        case .reject:
+        case .reject(let from):
             unreject(last.asset)
+            writeRating(last.asset, from: .unset, to: from)
         }
         currentID = last.asset.localIdentifier
         rememberPosition()
@@ -170,9 +173,10 @@ final class AlbumSessionViewModel: ObservableObject {
         switch decision {
         case .rate(_, let from, let to):
             writeRating(asset, from: from, to: to)
-        case .reject:
+        case .reject(let from):
             rejectedIDs.insert(asset.localIdentifier)
             persistRejected(asset.localIdentifier, true)
+            writeRating(asset, from: from, to: .unset)
         }
     }
 
