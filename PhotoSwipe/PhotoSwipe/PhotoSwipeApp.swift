@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct PhotoSwipeApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var dropbox = DropboxAuth.shared
     @StateObject private var sync = DropboxSyncEngine.shared
     private let container: ModelContainer
@@ -18,6 +19,7 @@ struct PhotoSwipeApp: App {
         _ = DropboxService.shared      // registers Dropbox thumbnails with ImageLoader
         _ = Connectivity.shared
         DropboxSyncEngine.shared.start(container: container)
+        OfflineDownloadManager.shared.start(container: container)
     }
 
     var body: some Scene {

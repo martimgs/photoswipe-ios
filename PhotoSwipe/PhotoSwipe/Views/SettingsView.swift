@@ -8,6 +8,8 @@ struct SettingsView: View {
     @EnvironmentObject private var dropbox: DropboxAuth
     @EnvironmentObject private var sync: DropboxSyncEngine
     @State private var confirmSignOut = false
+    @AppStorage(OfflineDownloadManager.qualityKey) private var quality = DownloadQuality.optimized.rawValue
+    @State private var estimates: (optimized: Int64, originals: Int64, photos: Int) = (0, 0, 0)
 
     var body: some View {
         NavigationStack {
@@ -57,6 +59,25 @@ struct SettingsView: View {
                 .listRowBackground(Color.white.opacity(0.6))
 
                 Section {
+                    Picker("Quality", selection: $quality) {
+                        ForEach(DownloadQuality.allCases, id: \.self) { q in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(q.title)
+                                Text(estimateText(q)).font(.footnote).foregroundStyle(Theme.inkSecondary)
+                            }
+                            .tag(q.rawValue)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("Offline downloads")
+                } footer: {
+                    Text("Used when you make a Dropbox album available offline. Optimized saves Dropbox-rendered copies up to 2048 px; Originals saves the full files. Sizes are for all \(estimates.photos) photos in your Dropbox albums; the Optimized size is an estimate.")
+                }
+                .listRowBackground(Color.white.opacity(0.6))
+
+                Section {
                     LabeledContent("Version", value: version)
                 } footer: {
                     Text("PhotoSwipe never deletes photos. Rejecting only hides a photo inside this app.")
@@ -72,6 +93,7 @@ struct SettingsView: View {
                      ? "\(sync.pendingCount) rating changes haven't synced yet. They stay in PhotoSwipe and sync after you sign in again."
                      : "Your Dropbox albums, ratings and downloaded photos stay in PhotoSwipe.")
             }
+            .task { estimates = OfflineDownloadManager.shared.estimatedSizes() }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -102,6 +124,12 @@ struct SettingsView: View {
         default:
             return "Allow photo access in Settings to connect albums."
         }
+    }
+
+    private func estimateText(_ q: DownloadQuality) -> String {
+        let bytes = q == .optimized ? estimates.optimized : estimates.originals
+        let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        return q == .optimized ? "About \(size)" : size
     }
 
     private var version: String {

@@ -39,7 +39,8 @@ final class ImageLoader {
         return image
     }
 
-    func forget(_ item: PhotoItem) {
+    /// Drop cached images, e.g. after downloads are removed.
+    func forgetAll() {
         memory.removeAllObjects()
     }
 

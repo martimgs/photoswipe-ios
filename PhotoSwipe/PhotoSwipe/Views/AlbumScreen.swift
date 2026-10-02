@@ -18,6 +18,8 @@ struct AlbumScreen: View {
               DropboxAuth.shared.isSignedIn else { return }
         if (try? await DropboxService.shared.checkForChanges(vm.album, context: context)) != nil {
             vm.reloadPhotos()
+            // Offline albums: fetch only the files that are new.
+            OfflineDownloadManager.shared.downloadNewFiles(vm.album)
         }
     }
 

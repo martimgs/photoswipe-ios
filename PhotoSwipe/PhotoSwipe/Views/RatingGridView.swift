@@ -119,7 +119,7 @@ struct RatingGridView: View {
                     .foregroundStyle(Theme.inkSecondary)
                     .monospacedDigit()
             }
-            .padding(.horizontal, 60)
+            .padding(.horizontal, vm.album.source == .dropbox ? 100 : 60)
             HStack {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
@@ -128,6 +128,9 @@ struct RatingGridView: View {
                 }
                 .accessibilityLabel("Back")
                 Spacer()
+                if vm.album.source == .dropbox {
+                    AlbumStatusButton(album: vm.album)
+                }
                 Menu {
                     Picker("Sort", selection: $sort) {
                         ForEach(Sort.allCases, id: \.self) { Text($0.title).tag($0) }

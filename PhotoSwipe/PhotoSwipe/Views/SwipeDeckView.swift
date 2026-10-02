@@ -44,7 +44,7 @@ struct SwipeDeckView: View {
                     .foregroundStyle(Theme.inkSecondary)
                     .monospacedDigit()
             }
-            .padding(.horizontal, 60)
+            .padding(.horizontal, vm.album.source == .dropbox ? 100 : 60)
             HStack {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
@@ -53,6 +53,9 @@ struct SwipeDeckView: View {
                 }
                 .accessibilityLabel("Back")
                 Spacer()
+                if vm.album.source == .dropbox {
+                    AlbumStatusButton(album: vm.album)
+                }
                 menu
             }
             .foregroundStyle(Theme.ink)

@@ -20,7 +20,11 @@ final class DropboxAuth: ObservableObject {
     static func setUp() {
         guard !didSetUp else { return }
         didSetUp = true
-        DropboxClientsManager.setupWithAppKey(DropboxConfig.appKey)
+        // Includes a background-session client for offline downloads.
+        DropboxClientsManager.setupWithAppKey(
+            DropboxConfig.appKey,
+            backgroundSessionIdentifier: OfflineDownloadManager.backgroundSessionIdentifier,
+            requestsToReconnect: OfflineDownloadManager.reconnect)
     }
 
     var client: DropboxClient? { DropboxClientsManager.authorizedClient }
@@ -58,7 +62,7 @@ final class DropboxAuth: ObservableObject {
     /// Handles the `db-<appKey>://` redirect. Returns true if it was ours.
     @discardableResult
     func handle(_ url: URL) -> Bool {
-        DropboxClientsManager.handleRedirectURL(url, includeBackgroundClient: false) { [weak self] result in
+        DropboxClientsManager.handleRedirectURL(url, includeBackgroundClient: true) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 switch result {

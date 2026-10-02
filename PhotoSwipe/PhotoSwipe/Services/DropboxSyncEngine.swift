@@ -25,6 +25,8 @@ final class DropboxSyncEngine: ObservableObject {
     @Published private(set) var isSyncing = false
     /// Total entries waiting, across all albums.
     @Published private(set) var pendingCount = 0
+    /// Entries waiting per album (`ConnectedAlbum.externalID`).
+    @Published private(set) var pendingCountByAlbum: [String: Int] = [:]
     /// Set if Dropbox refuses tags for this account; syncing stops.
     @Published private(set) var tagsUnavailableReason: String?
     @Published private(set) var lastError: String?
@@ -127,7 +129,9 @@ final class DropboxSyncEngine: ObservableObject {
 
     private func refreshCount() {
         guard let context else { return }
-        pendingCount = (try? context.fetchCount(FetchDescriptor<SyncQueueEntry>())) ?? 0
+        let all = (try? context.fetch(FetchDescriptor<SyncQueueEntry>())) ?? []
+        pendingCount = all.count
+        pendingCountByAlbum = Dictionary(grouping: all, by: \.albumID).mapValues(\.count)
     }
 
     // MARK: Dropbox calls
