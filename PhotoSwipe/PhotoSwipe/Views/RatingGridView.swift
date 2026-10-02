@@ -10,6 +10,9 @@ struct RatingGridView: View {
     @ObservedObject private var connectivity = Connectivity.shared
     @State private var tab: Tab = .selected
     @State private var sort: Sort = .album
+    @State private var showExport = false
+    @State private var exportAlert: String?
+    @ObservedObject private var dropboxAuth = DropboxAuth.shared
 
     enum Sort: CaseIterable {
         case album, highest, lowest
@@ -107,6 +110,12 @@ struct RatingGridView: View {
         }
         .background(Theme.paper.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showExport) {
+            ExportSheet(items: items, album: vm.album, folder: vm.folder)
+        }
+        .alert(exportAlert ?? "", isPresented: Binding(get: { exportAlert != nil }, set: { if !$0 { exportAlert = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
     }
 
     // MARK: Header
@@ -123,7 +132,7 @@ struct RatingGridView: View {
                     .foregroundStyle(Theme.inkSecondary)
                     .monospacedDigit()
             }
-            .padding(.horizontal, vm.album.source == .dropbox ? 100 : 60)
+            .padding(.horizontal, vm.album.source == .dropbox ? 140 : 100)
             HStack {
                 Button { dismiss() } label: {
                     Image(systemName: "chevron.left")
@@ -132,6 +141,19 @@ struct RatingGridView: View {
                 }
                 .accessibilityLabel("Back")
                 Spacer()
+                // Export what's shown (current tab, filter and sort) to Dropbox.
+                Button {
+                    guard dropboxAuth.isSignedIn else { exportAlert = "Sign in to Dropbox in Settings to export."; return }
+                    guard Connectivity.shared.mayTryNetwork else { exportAlert = "Connect to the internet to export."; return }
+                    showExport = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 18))
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(items.isEmpty)
+                .opacity(items.isEmpty ? 0.3 : 1)
+                .accessibilityLabel("Export \(items.count) photos to Dropbox")
                 if vm.album.source == .dropbox {
                     AlbumStatusButton(album: vm.album, folder: vm.folder)
                 }

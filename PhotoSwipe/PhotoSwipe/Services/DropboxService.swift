@@ -53,6 +53,13 @@ final class DropboxService {
         return folders.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    /// Current display path of a file or folder (by ID or path).
+    func displayPath(of idOrPath: String) async -> String? {
+        guard let client = try? client,
+              let metadata = try? await client.files.getMetadata(path: idOrPath).response() else { return nil }
+        return metadata.pathDisplay
+    }
+
     /// Number of images in a folder, including all its subfolders.
     func imageCount(in folderID: String) async throws -> Int {
         var count = 0
