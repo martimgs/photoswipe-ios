@@ -17,18 +17,11 @@ struct ConnectAlbumSheet: View {
                     } label: {
                         sourceRow("photo.on.rectangle", "Apple Photos", "Albums on this iPhone")
                     }
-                    HStack {
+                    NavigationLink {
+                        DropboxFolderPicker(connected: connected) { dismiss() }
+                    } label: {
                         sourceRow("shippingbox", "Dropbox", "Folders in your Dropbox")
-                        Spacer()
-                        Text("Coming soon")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.inkSecondary)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Theme.surface, in: Capsule())
                     }
-                    .opacity(0.55)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityHint("Not available yet")
                 }
                 .listRowBackground(Color.white.opacity(0.6))
             }

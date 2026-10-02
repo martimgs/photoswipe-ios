@@ -64,7 +64,9 @@ final class DropboxAuth: ObservableObject {
                 switch result {
                 case .success: self.lastError = nil
                 case .cancel: break
-                case .error(_, let description): self.lastError = description ?? "Sign-in failed."
+                case .error(let error, let description):
+                    // Show the OAuth error code too, e.g. "invalid_scope".
+                    self.lastError = "Sign-in failed (\(error.rawValue))" + (description.map { ": \($0)" } ?? ".")
                 case .none: break
                 }
                 self.refresh()

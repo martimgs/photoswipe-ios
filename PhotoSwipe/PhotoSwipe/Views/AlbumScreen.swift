@@ -12,6 +12,15 @@ struct AlbumScreen: View {
         _vm = StateObject(wrappedValue: AlbumSessionViewModel(album: album))
     }
 
+    /// Dropbox: pick up new/removed files whenever the album opens online.
+    private func checkForChanges() async {
+        guard vm.album.source == .dropbox, Connectivity.shared.isOnline,
+              DropboxAuth.shared.isSignedIn else { return }
+        if (try? await DropboxService.shared.checkForChanges(vm.album, context: context)) != nil {
+            vm.reloadPhotos()
+        }
+    }
+
     var body: some View {
         Group {
             switch vm.phase {
@@ -32,6 +41,9 @@ struct AlbumScreen: View {
         .navigationDestination(isPresented: $showGrid) {
             RatingGridView(vm: vm)
         }
-        .task { if vm.phase == .loading { vm.load(context: context) } }
+        .task {
+            if vm.phase == .loading { vm.load(context: context) }
+            await checkForChanges()
+        }
     }
 }

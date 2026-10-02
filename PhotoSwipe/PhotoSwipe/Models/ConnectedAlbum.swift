@@ -18,6 +18,9 @@ final class ConnectedAlbum {
 
     // MARK: Dropbox only
 
+    /// Lowercased Dropbox path of the folder, refreshed on each check. Used
+    /// only to match deleted entries (which carry no ID) and skip subfolders.
+    var folderPathLower: String?
     /// `list_folder` cursor for incremental "check for changes".
     var listCursor: String?
     var lastCheckedAt: Date?

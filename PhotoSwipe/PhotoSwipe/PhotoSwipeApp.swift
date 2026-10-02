@@ -7,6 +7,8 @@ struct PhotoSwipeApp: App {
 
     init() {
         DropboxAuth.setUp()
+        _ = DropboxService.shared      // registers Dropbox thumbnails with ImageLoader
+        _ = Connectivity.shared
     }
 
     var body: some Scene {

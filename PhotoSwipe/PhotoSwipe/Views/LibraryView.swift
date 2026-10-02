@@ -93,7 +93,19 @@ struct LibraryView: View {
         .contentShape(Rectangle())
     }
 
+    /// Removes the connection only. For Dropbox albums the app's own
+    /// downloaded copies are deleted; files in Dropbox are never touched.
+    /// Ratings and any pending tag syncs are kept.
     private func disconnect(_ album: ConnectedAlbum) {
+        if album.source == .dropbox {
+            let albumID = album.externalID
+            let files = (try? context.fetch(FetchDescriptor<DropboxFile>(
+                predicate: #Predicate { $0.albumID == albumID }))) ?? []
+            for file in files {
+                OfflineStore.removeLocalCopy(file.fileID)
+                context.delete(file)
+            }
+        }
         context.delete(album)
         try? context.save()
     }
@@ -127,7 +139,10 @@ struct AlbumRow: View {
             }
         }
         .padding(.vertical, 2)
-        .task(id: album.externalID) { info = AlbumInfo.load(album, context: context) }
+        // Re-read after each Dropbox "check for changes".
+        .task(id: "\(album.externalID)|\(album.lastCheckedAt?.timeIntervalSince1970 ?? 0)") {
+            info = AlbumInfo.load(album, context: context)
+        }
     }
 
     private var subtitle: String {
