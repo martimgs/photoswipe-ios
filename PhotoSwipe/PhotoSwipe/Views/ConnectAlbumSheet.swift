@@ -116,14 +116,14 @@ private struct AppleAlbumPicker: View {
 private struct PickerAlbumRow: View {
     let album: PHAssetCollection
     let isConnected: Bool
-    @State private var cover: PHAsset?
+    @State private var cover: PhotoItem?
     @State private var count = 0
 
     var body: some View {
         HStack(spacing: 14) {
             Group {
                 if let cover {
-                    Thumbnail(asset: cover, side: 52, cornerRadius: 6)
+                    Thumbnail(item: cover, side: 52, cornerRadius: 6)
                 } else {
                     RoundedRectangle(cornerRadius: 6).fill(Theme.surface).frame(width: 52, height: 52)
                 }
@@ -144,7 +144,7 @@ private struct PickerAlbumRow: View {
         .foregroundStyle(Theme.ink)
         .task(id: album.localIdentifier) {
             let service = PhotoLibraryService()
-            cover = service.coverPhoto(of: album)
+            cover = service.coverPhoto(of: album).map(PhotoItem.init(asset:))
             count = service.photoCount(in: album)
         }
     }

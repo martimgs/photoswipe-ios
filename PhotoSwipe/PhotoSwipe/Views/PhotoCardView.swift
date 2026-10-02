@@ -1,5 +1,4 @@
 import SwiftUI
-import Photos
 
 /// What a drag is about to do, shown as a large white overlay on the card.
 enum SwipeIntent: Equatable {
@@ -27,13 +26,12 @@ enum SwipeIntent: Equatable {
 /// A large rounded photo card. While dragging, shows the pending change as a
 /// white overlay whose opacity follows the drag.
 struct PhotoCardView: View {
-    let asset: PHAsset
+    let item: PhotoItem
     var intent: SwipeIntent? = nil
     var intentStrength: Double = 0
 
     @State private var image: UIImage?
     @Environment(\.displayScale) private var displayScale
-    private let service = PhotoLibraryService()
 
     var body: some View {
         GeometryReader { geo in
@@ -54,11 +52,11 @@ struct PhotoCardView: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: Theme.cardCorner, style: .continuous))
-            .task(id: asset.localIdentifier) { await loadImage(fitting: geo.size) }
+            .task(id: item.id) { await loadImage(fitting: geo.size) }
         }
         .shadow(color: .black.opacity(0.12), radius: 18, y: 10)
         .accessibilityElement()
-        .accessibilityLabel(asset.creationDate.map {
+        .accessibilityLabel(item.date.map {
             "Photo from \($0.formatted(date: .abbreviated, time: .omitted))"
         } ?? "Photo")
     }
@@ -84,7 +82,7 @@ struct PhotoCardView: View {
     /// Request pixels for the card's actual on-screen size.
     private func loadImage(fitting cardSize: CGSize) async {
         let size = CGSize(width: cardSize.width * displayScale, height: cardSize.height * displayScale)
-        if let img = await service.requestImage(for: asset, targetSize: size, contentMode: .aspectFill) {
+        if let img = await ImageLoader.shared.image(for: item, pixelSize: size) {
             withAnimation(.easeOut(duration: 0.2)) { image = img }
         }
     }

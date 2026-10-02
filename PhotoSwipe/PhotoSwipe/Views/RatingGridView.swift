@@ -1,5 +1,4 @@
 import SwiftUI
-import Photos
 
 /// Review grid (mockup screen 4): the album's photos with their stars, and
 /// All / Selected / Rejected tabs. Nothing is ever deleted — the Rejected tab
@@ -45,7 +44,7 @@ struct RatingGridView: View {
     private var selectedMin: Int { vm.minRating }
 
     /// Filtered by tab, then sorted. Ties keep album order.
-    private var items: [PHAsset] {
+    private var items: [PhotoItem] {
         let filtered = filteredItems
         switch sort {
         case .album:
@@ -53,19 +52,19 @@ struct RatingGridView: View {
         case .highest, .lowest:
             let ascending = sort == .lowest
             return filtered.enumerated().sorted { a, b in
-                let ra = vm.rating(of: a.element).rawValue, rb = vm.rating(of: b.element).rawValue
+                let ra = vm.rating(of: a.element), rb = vm.rating(of: b.element)
                 if ra != rb { return ascending ? ra < rb : ra > rb }
                 return a.offset < b.offset
             }.map(\.element)
         }
     }
 
-    private var filteredItems: [PHAsset] {
+    private var filteredItems: [PhotoItem] {
         switch tab {
         case .all:
             return vm.photos.filter { !vm.isRejected($0) }
         case .selected:
-            return vm.photos.filter { !vm.isRejected($0) && vm.rating(of: $0).rawValue >= selectedMin }
+            return vm.photos.filter { !vm.isRejected($0) && vm.rating(of: $0) >= selectedMin }
         case .rejected:
             return vm.rejectedPhotos
         }
@@ -91,7 +90,7 @@ struct RatingGridView: View {
                     } else {
                         LazyVGrid(columns: [GridItem(.fixed(side), spacing: 8),
                                             GridItem(.fixed(side), spacing: 8)], spacing: 14) {
-                            ForEach(items, id: \.localIdentifier) { asset in
+                            ForEach(items) { asset in
                                 cell(asset, side: side)
                             }
                         }
@@ -158,14 +157,14 @@ struct RatingGridView: View {
 
     // MARK: Cells
 
-    private func cell(_ asset: PHAsset, side: CGFloat) -> some View {
+    private func cell(_ asset: PhotoItem, side: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Button {
                 guard tab != .rejected else { return }
                 vm.jump(to: asset)
                 dismiss()
             } label: {
-                Thumbnail(asset: asset, side: side, cornerRadius: 4)
+                Thumbnail(item: asset, side: side, cornerRadius: 4)
                     .opacity(tab == .rejected ? 0.55 : 1)
             }
             .buttonStyle(.plain)

@@ -16,6 +16,16 @@ final class ConnectedAlbum {
     /// The photo the swipe deck was left on, so reopening resumes there.
     var lastPhotoID: String?
 
+    // MARK: Dropbox only
+
+    /// `list_folder` cursor for incremental "check for changes".
+    var listCursor: String?
+    var lastCheckedAt: Date?
+    /// Raw value of `OfflineState`.
+    var offlineStateRaw: String = OfflineState.onlineOnly.rawValue
+    /// Raw value of `DownloadQuality` used for this album's offline copy.
+    var offlineQualityRaw: String?
+
     init(source: PhotoSourceKind, externalID: String, name: String) {
         self.sourceRaw = source.rawValue
         self.externalID = externalID
@@ -24,4 +34,31 @@ final class ConnectedAlbum {
     }
 
     var source: PhotoSourceKind { PhotoSourceKind(rawValue: sourceRaw) ?? .applePhotos }
+
+    var offlineState: OfflineState {
+        get { OfflineState(rawValue: offlineStateRaw) ?? .onlineOnly }
+        set { offlineStateRaw = newValue.rawValue }
+    }
+}
+
+/// Whether a Dropbox album's photos are kept on the device.
+enum OfflineState: String, Codable {
+    case onlineOnly
+    case downloading
+    case paused
+    case offline
+}
+
+/// Quality for offline copies of Dropbox photos.
+enum DownloadQuality: String, Codable, CaseIterable {
+    /// Dropbox-rendered JPEG, max 2048×1536.
+    case optimized
+    case originals
+
+    var title: String {
+        switch self {
+        case .optimized: return "Optimized"
+        case .originals: return "Originals"
+        }
+    }
 }

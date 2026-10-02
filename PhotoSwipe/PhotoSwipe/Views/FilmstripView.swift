@@ -1,21 +1,20 @@
 import SwiftUI
-import Photos
 
 /// Horizontal thumbnails of the deck. Tap one to jump to it; the current photo
 /// is raised and outlined, and kept scrolled into view.
 struct FilmstripView: View {
-    let photos: [PHAsset]
+    let photos: [PhotoItem]
     let currentID: String?
-    let onSelect: (PHAsset) -> Void
+    let onSelect: (PhotoItem) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 4) {
-                    ForEach(photos, id: \.localIdentifier) { asset in
-                        let isCurrent = asset.localIdentifier == currentID
-                        Button { Haptics.tap(); onSelect(asset) } label: {
-                            Thumbnail(asset: asset, side: 56, cornerRadius: 3)
+                    ForEach(photos) { item in
+                        let isCurrent = item.id == currentID
+                        Button { Haptics.tap(); onSelect(item) } label: {
+                            Thumbnail(item: item, side: 56, cornerRadius: 3)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 3)
                                         .strokeBorder(Theme.ink, lineWidth: isCurrent ? 2 : 0)
@@ -25,7 +24,7 @@ struct FilmstripView: View {
                                 .zIndex(isCurrent ? 1 : 0)
                         }
                         .buttonStyle(.plain)
-                        .id(asset.localIdentifier)
+                        .id(item.id)
                         .accessibilityLabel(isCurrent ? "Current photo" : "Photo")
                     }
                 }

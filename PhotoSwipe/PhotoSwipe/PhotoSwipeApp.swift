@@ -17,6 +17,6 @@ struct PhotoSwipeApp: App {
                 .onOpenURL { dropbox.handle($0) }
                 .task { dropbox.refresh() }
         }
-        .modelContainer(for: [ConnectedAlbum.self, PhotoState.self])
+        .modelContainer(for: [ConnectedAlbum.self, PhotoState.self, DropboxFile.self, SyncQueueEntry.self])
     }
 }

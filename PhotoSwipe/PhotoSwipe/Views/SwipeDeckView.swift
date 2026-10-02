@@ -1,5 +1,4 @@
 import SwiftUI
-import Photos
 
 /// The rating screen: header, photo card, star row, filmstrip, X / heart.
 /// Right = +1 star, left = −1 star, up = pick (5 stars), down = reject.
@@ -87,18 +86,18 @@ struct SwipeDeckView: View {
 
     // MARK: Card
 
-    private func card(_ current: PHAsset) -> some View {
+    private func card(_ current: PhotoItem) -> some View {
         ZStack {
             if let next = vm.next {
-                PhotoCardView(asset: next)
+                PhotoCardView(item: next)
                     .scaleEffect(0.95)
                     .rotationEffect(.degrees(-3))
                     .offset(x: -8, y: 6)
                     .opacity(0.9)
-                    .id("next-" + next.localIdentifier)
+                    .id("next-" + next.id)
             }
-            PhotoCardView(asset: current, intent: intent, intentStrength: strength)
-                .id(current.localIdentifier)
+            PhotoCardView(item: current, intent: intent, intentStrength: strength)
+                .id(current.id)
                 .offset(drag)
                 .rotationEffect(.degrees(Double(drag.width / 18)), anchor: .bottom)
                 .gesture(dragGesture)

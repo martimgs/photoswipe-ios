@@ -104,12 +104,13 @@ struct LibraryView: View {
 struct AlbumRow: View {
     let album: ConnectedAlbum
     @State private var info: AlbumInfo?
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         HStack(spacing: 18) {
             Group {
                 if let cover = info?.cover {
-                    Thumbnail(asset: cover, side: 88, cornerRadius: 8)
+                    Thumbnail(item: cover, side: 88, cornerRadius: 8)
                 } else {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Theme.surface)
@@ -126,7 +127,7 @@ struct AlbumRow: View {
             }
         }
         .padding(.vertical, 2)
-        .task(id: album.externalID) { info = AlbumInfo.load(album) }
+        .task(id: album.externalID) { info = AlbumInfo.load(album, context: context) }
     }
 
     private var subtitle: String {
@@ -140,11 +141,11 @@ struct AlbumRow: View {
 struct AlbumInfo {
     var name: String?
     var count = 0
-    var cover: PHAsset?
+    var cover: PhotoItem?
     var isAvailable = false
 
     @MainActor
-    static func load(_ album: ConnectedAlbum) -> AlbumInfo {
+    static func load(_ album: ConnectedAlbum, context: ModelContext) -> AlbumInfo {
         switch album.source {
         case .applePhotos:
             let service = PhotoLibraryService()
@@ -153,10 +154,12 @@ struct AlbumInfo {
             }
             return AlbumInfo(name: collection.localizedTitle,
                              count: service.photoCount(in: collection),
-                             cover: service.coverPhoto(of: collection),
+                             cover: service.coverPhoto(of: collection).map(PhotoItem.init(asset:)),
                              isAvailable: true)
         case .dropbox:
-            return AlbumInfo()
+            // Dropbox albums always stay in the app, online or not.
+            let items = AlbumSessionViewModel.dropboxItems(albumID: album.externalID, context: context)
+            return AlbumInfo(name: album.name, count: items.count, cover: items.first, isAvailable: true)
         }
     }
 }

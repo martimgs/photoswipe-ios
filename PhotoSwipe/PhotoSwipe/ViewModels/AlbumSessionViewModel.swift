@@ -1,11 +1,12 @@
 import SwiftUI
 import SwiftData
-import Photos
 
 /// State for one connected album, shared by the swipe and grid screens.
 ///
 /// The current photo is tracked by identifier, not index, so rejecting a
 /// photo or changing the rating filter never shifts the deck under the user.
+/// Ratings and rejected flags are saved through the album's `RatingBackend`
+/// (PhotoKit for Apple Photos, SwiftData + sync queue for Dropbox).
 @MainActor
 final class AlbumSessionViewModel: ObservableObject {
     enum Phase {
@@ -19,23 +20,17 @@ final class AlbumSessionViewModel: ObservableObject {
 
     @Published private(set) var phase: Phase = .loading
     /// Every photo in the album, in album order.
-    @Published private(set) var photos: [PHAsset] = []
+    @Published private(set) var photos: [PhotoItem] = []
     /// The photo on the card; nil once the user has gone past the last one.
     @Published var currentID: String?
-    /// Minimum star rating to show (0 = any). Always a user choice.
+    /// Minimum star rating to show (0 = all). Always a user choice.
     @Published var minRating = 0
     @Published private(set) var rejectedIDs: Set<String> = []
+    @Published private(set) var ratings: [String: Int] = [:]
     @Published private(set) var history: [SwipeAction] = []
 
-    // Ratings written this session. `PHAsset` is an immutable snapshot, so its
-    // `rating` goes stale after a write — this map is the source of truth.
-    @Published private(set) var ratingOverrides: [String: PHAsset.Rating] = [:]
-
-    private let service = PhotoLibraryService()
     private var context: ModelContext?
-    /// Rating writes run one after another so an undo can't overtake the
-    /// write it undoes.
-    private var writeChain: Task<Void, Never>?
+    private var backend: RatingBackend?
 
     init(album: ConnectedAlbum) {
         self.album = album
@@ -43,29 +38,25 @@ final class AlbumSessionViewModel: ObservableObject {
 
     // MARK: Derived
 
-    func rating(of asset: PHAsset) -> PHAsset.Rating {
-        ratingOverrides[asset.localIdentifier] ?? asset.rating
-    }
+    func rating(of item: PhotoItem) -> Int { ratings[item.id] ?? 0 }
 
-    func isRejected(_ asset: PHAsset) -> Bool {
-        rejectedIDs.contains(asset.localIdentifier)
-    }
+    func isRejected(_ item: PhotoItem) -> Bool { rejectedIDs.contains(item.id) }
 
     /// What the swipe deck and filmstrip show: not rejected, at or above the
     /// rating filter.
-    var deck: [PHAsset] {
-        photos.filter { !isRejected($0) && rating(of: $0).rawValue >= minRating }
+    var deck: [PhotoItem] {
+        photos.filter { !isRejected($0) && rating(of: $0) >= minRating }
     }
 
-    var current: PHAsset? {
+    var current: PhotoItem? {
         guard let currentID else { return nil }
-        return photos.first { $0.localIdentifier == currentID }
+        return photos.first { $0.id == currentID }
     }
 
     /// The photo after `current` in the deck, for the stacked card behind.
-    var next: PHAsset? {
+    var next: PhotoItem? {
         let d = deck
-        guard let currentID, let i = d.firstIndex(where: { $0.localIdentifier == currentID }),
+        guard let currentID, let i = d.firstIndex(where: { $0.id == currentID }),
               d.indices.contains(i + 1) else { return nil }
         return d[i + 1]
     }
@@ -73,51 +64,84 @@ final class AlbumSessionViewModel: ObservableObject {
     /// 1-based position of the current photo in the deck.
     var position: Int? {
         guard let currentID else { return nil }
-        return deck.firstIndex { $0.localIdentifier == currentID }.map { $0 + 1 }
+        return deck.firstIndex { $0.id == currentID }.map { $0 + 1 }
     }
 
     var canUndo: Bool { !history.isEmpty }
-    var rejectedPhotos: [PHAsset] { photos.filter(isRejected) }
+    var rejectedPhotos: [PhotoItem] { photos.filter(isRejected) }
 
     // MARK: Load
 
     func load(context: ModelContext) {
         self.context = context
-        guard let collection = service.album(withLocalIdentifier: album.externalID) else {
-            phase = .unavailable
-            return
+        switch album.source {
+        case .applePhotos:
+            let service = PhotoLibraryService()
+            guard let collection = service.album(withLocalIdentifier: album.externalID) else {
+                phase = .unavailable
+                return
+            }
+            photos = service.photos(in: collection).map(PhotoItem.init(asset:))
+            backend = ApplePhotosRatingBackend(context: context)
+        case .dropbox:
+            photos = Self.dropboxItems(albumID: album.externalID, context: context)
+            backend = DropboxRatingBackend(context: context, albumID: album.externalID)
         }
-        photos = service.photos(in: collection)
-        rejectedIDs = loadRejectedIDs()
+        reloadState()
         guard !photos.isEmpty else { phase = .empty; return }
 
         // Resume where the user left off, if that photo is still in the deck.
         let d = deck
-        if let last = album.lastPhotoID, d.contains(where: { $0.localIdentifier == last }) {
+        if let last = album.lastPhotoID, d.contains(where: { $0.id == last }) {
             currentID = last
         } else {
-            currentID = d.first?.localIdentifier
+            currentID = d.first?.id
         }
         phase = .ready
     }
 
+    /// Re-read the album's files after a Dropbox "check for changes".
+    func reloadPhotos() {
+        guard let context, album.source == .dropbox else { return }
+        photos = Self.dropboxItems(albumID: album.externalID, context: context)
+        reloadState()
+        if currentID == nil || !photos.contains(where: { $0.id == currentID }) {
+            currentID = deck.first?.id
+        }
+        phase = photos.isEmpty ? .empty : .ready
+    }
+
+    private func reloadState() {
+        guard let backend else { return }
+        ratings = backend.ratings(for: photos)
+        rejectedIDs = backend.rejectedIDs(for: photos).intersection(photos.map(\.id))
+    }
+
+    static func dropboxItems(albumID: String, context: ModelContext) -> [PhotoItem] {
+        let files = (try? context.fetch(FetchDescriptor<DropboxFile>(
+            predicate: #Predicate { $0.albumID == albumID }))) ?? []
+        return files
+            .sorted { ($0.date ?? .distantPast, $0.name) < ($1.date ?? .distantPast, $1.name) }
+            .map { PhotoItem(dropboxFileID: $0.fileID, date: $0.date) }
+    }
+
     // MARK: Navigation
 
-    func jump(to asset: PHAsset) {
-        currentID = asset.localIdentifier
+    func jump(to item: PhotoItem) {
+        currentID = item.id
         rememberPosition()
     }
 
     func startOver() {
-        currentID = deck.first?.localIdentifier
+        currentID = deck.first?.id
         rememberPosition()
     }
 
     /// Re-anchor after the filter changes: stay on the current photo if it
     /// still qualifies, otherwise move to the next one that does.
     func filterChanged() {
-        guard let id = currentID else { currentID = deck.first?.localIdentifier; return }
-        if !deck.contains(where: { $0.localIdentifier == id }) { currentID = nextInDeck(after: id) }
+        guard let id = currentID else { currentID = deck.first?.id; return }
+        if !deck.contains(where: { $0.id == id }) { currentID = nextInDeck(after: id) }
         rememberPosition()
     }
 
@@ -125,115 +149,81 @@ final class AlbumSessionViewModel: ObservableObject {
 
     /// Swipe right/left/up or the heart button: change the rating, then advance.
     func rate(_ step: RatingStep) {
-        guard let asset = current else { return }
-        let from = rating(of: asset)
-        record(.rate(step, from: from, to: step.apply(to: from)), on: asset)
-        advance(from: asset)
+        guard let item = current else { return }
+        let from = rating(of: item)
+        record(.rate(step, from: from, to: step.apply(to: from)), on: item)
+        advance(from: item)
     }
 
     /// Star row: set an exact rating and stay on the photo.
-    func setRating(_ value: PHAsset.Rating) {
-        guard let asset = current else { return }
-        let from = rating(of: asset)
+    func setRating(_ value: Int) {
+        guard let item = current else { return }
+        let from = rating(of: item)
         guard from != value else { return }
-        record(.rate(.exact(value), from: from, to: value), on: asset)
+        record(.rate(.exact(value), from: from, to: value), on: item)
     }
 
     /// Swipe down or X: set to 0 stars and hide the photo in this app (never
     /// deletes it), then advance.
     func reject() {
-        guard let asset = current else { return }
-        record(.reject(from: rating(of: asset)), on: asset)
-        advance(from: asset)
+        guard let item = current else { return }
+        record(.reject(from: rating(of: item)), on: item)
+        advance(from: item)
     }
 
     /// Bring a rejected photo back into the pool (grid's Rejected tab). It
     /// stays at 0 stars; only Undo restores the earlier rating.
-    func unreject(_ asset: PHAsset) {
-        rejectedIDs.remove(asset.localIdentifier)
-        persistRejected(asset.localIdentifier, false)
+    func unreject(_ item: PhotoItem) {
+        apply(item, rating: rating(of: item), rejected: false)
     }
 
     func undo() {
         guard let last = history.popLast() else { return }
         Haptics.tap(.medium)
         switch last.decision {
-        case .rate(_, let from, let to):
-            writeRating(last.asset, from: to, to: from)
+        case .rate(_, let from, _):
+            apply(last.item, rating: from, rejected: isRejected(last.item))
         case .reject(let from):
-            unreject(last.asset)
-            writeRating(last.asset, from: .unset, to: from)
+            apply(last.item, rating: from, rejected: false)
         }
-        currentID = last.asset.localIdentifier
+        currentID = last.item.id
         rememberPosition()
     }
 
-    private func record(_ decision: Decision, on asset: PHAsset) {
-        history.append(SwipeAction(asset: asset, decision: decision))
+    private func record(_ decision: Decision, on item: PhotoItem) {
+        history.append(SwipeAction(item: item, decision: decision))
         switch decision {
-        case .rate(_, let from, let to):
-            writeRating(asset, from: from, to: to)
-        case .reject(let from):
-            rejectedIDs.insert(asset.localIdentifier)
-            persistRejected(asset.localIdentifier, true)
-            writeRating(asset, from: from, to: .unset)
+        case .rate(_, _, let to):
+            apply(item, rating: to, rejected: isRejected(item))
+        case .reject:
+            apply(item, rating: 0, rejected: true)
         }
     }
 
-    private func advance(from asset: PHAsset) {
-        currentID = nextInDeck(after: asset.localIdentifier)
+    /// Update in memory, then persist through the backend.
+    private func apply(_ item: PhotoItem, rating: Int, rejected: Bool) {
+        let previous = self.rating(of: item)
+        ratings[item.id] = rating
+        if rejected { rejectedIDs.insert(item.id) } else { rejectedIDs.remove(item.id) }
+        backend?.save(item, rating: rating, rejected: rejected, previousRating: previous)
+    }
+
+    private func advance(from item: PhotoItem) {
+        currentID = nextInDeck(after: item.id)
         rememberPosition()
     }
 
     /// The next photo in album order (after `id`) that is in the deck. Works
     /// even when `id` itself just left the deck.
     private func nextInDeck(after id: String) -> String? {
-        guard let i = photos.firstIndex(where: { $0.localIdentifier == id }) else { return nil }
+        guard let i = photos.firstIndex(where: { $0.id == id }) else { return nil }
         return photos[(i + 1)...].first {
-            !isRejected($0) && rating(of: $0).rawValue >= minRating
-        }?.localIdentifier
+            !isRejected($0) && rating(of: $0) >= minRating
+        }?.id
     }
 
     private func rememberPosition() {
         album.lastPhotoID = currentID
         try? context?.save()
-    }
-
-    // MARK: Ratings (PhotoKit)
-
-    private func writeRating(_ asset: PHAsset, from: PHAsset.Rating, to: PHAsset.Rating) {
-        ratingOverrides[asset.localIdentifier] = to
-        guard from != to else { return }   // e.g. −1 on an unrated photo
-        let previous = writeChain
-        writeChain = Task { [service] in
-            await previous?.value
-            try? await service.setRating(asset, to)
-        }
-    }
-
-    // MARK: Rejected (SwiftData)
-
-    private var sourceRaw: String { album.sourceRaw }
-
-    private func loadRejectedIDs() -> Set<String> {
-        guard let context else { return [] }
-        let source = sourceRaw
-        let descriptor = FetchDescriptor<PhotoState>(
-            predicate: #Predicate { $0.sourceRaw == source && $0.isRejected })
-        let states = (try? context.fetch(descriptor)) ?? []
-        return Set(states.map(\.photoID))
-    }
-
-    private func persistRejected(_ photoID: String, _ rejected: Bool) {
-        guard let context else { return }
-        let source = sourceRaw
-        let descriptor = FetchDescriptor<PhotoState>(
-            predicate: #Predicate { $0.sourceRaw == source && $0.photoID == photoID })
-        if let state = try? context.fetch(descriptor).first {
-            state.isRejected = rejected
-        } else {
-            context.insert(PhotoState(source: album.source, photoID: photoID, isRejected: rejected))
-        }
-        try? context.save()
     }
 }
