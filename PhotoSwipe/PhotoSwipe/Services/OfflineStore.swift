@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Where downloaded Dropbox photos live: Application Support (never Caches,
 /// which iOS can purge), excluded from iCloud backup since Dropbox has them.
@@ -16,10 +17,26 @@ enum OfflineStore {
         return dir
     }
 
-    /// Stable on-disk name for a Dropbox file ID ("id:abc" -> "id_abc").
+    /// Stable on-disk name for a Dropbox file ID. File IDs are
+    /// case-sensitive but the iOS file system isn't, so the ID is hashed:
+    /// "id:…Qw" and "id:…qw" must never share a file.
     static func fileName(for fileID: String) -> String {
-        fileID.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
-            .reduce(into: "") { $0.append($1) }
+        SHA256.hash(data: Data(fileID.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Files from older builds were named after the ID itself ("id_…"),
+    /// which collided for IDs differing only in case. Returns true if any
+    /// were removed, so offline albums can be downloaded again.
+    @discardableResult
+    static func removeLegacyFiles() -> Bool {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return false }
+        let legacy = names.filter { $0.hasPrefix("id_") }
+        for name in legacy { try? fm.removeItem(at: directory.appendingPathComponent(name)) }
+        // Old online-thumbnail cache used the same naming.
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        try? fm.removeItem(at: caches.appendingPathComponent("DropboxThumbnails"))
+        return !legacy.isEmpty
     }
 
     static func localURL(for fileID: String) -> URL {
