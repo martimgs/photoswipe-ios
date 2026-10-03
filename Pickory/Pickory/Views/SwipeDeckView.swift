@@ -9,9 +9,11 @@ private struct CardSizeKey: PreferenceKey {
     }
 }
 
-/// The rating screen: photo card, star row, filmstrip, X / heart, under a
-/// native navigation bar (album name, "12 of 179", "…" menu).
-/// Right = +1 star, left = −1 star, up = pick (5 stars), down = reject.
+/// The rating screen: photo card, star row and filmstrip under a native
+/// navigation bar (album name, "12 of 179", Undo, "…" menu). In landscape the
+/// stars move into the bar so the photo gets all the height.
+/// Right = +1 star, left = next (rating unchanged), up = pick (5 stars),
+/// down = reject.
 /// Each gesture applies to the current photo, then advances.
 struct SwipeDeckView: View {
     @ObservedObject var vm: AlbumSessionViewModel
@@ -23,23 +25,21 @@ struct SwipeDeckView: View {
     @State private var cardPixelSide: CGFloat = 0
     /// Finger on the filmstrip (or its momentum): cards switch without animation.
     @State private var scrubbing = false
+    /// Wider than tall (phone or iPad landscape): stars live in the bar.
+    @State private var isLandscape = false
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        GeometryReader { geo in
-            // Wider than tall (phone or iPad landscape): photo on the left,
-            // controls in a column on the right, so the photo gets the height.
-            if geo.size.width > geo.size.height * 1.15 {
-                landscape
-            } else {
-                portrait
-            }
+        Group {
+            if isLandscape { landscape } else { portrait }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: Bool.self) { $0.size.width > $0.size.height * 1.15 } action: {
+            isLandscape = $0
         }
         .background(Theme.paper.ignoresSafeArea())
-        .navigationSubtitle(subtitle)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { menu }
-        }
+        .navigationSubtitle(isLandscape ? "" : subtitle)
+        .toolbar { toolbarContent }
         .fullScreenCover(item: $fullScreen) { FullScreenPhotoView(item: $0) }
         .onPreferenceChange(CardSizeKey.self) { side in
             if side > 0 { cardPixelSide = side * displayScale }
@@ -94,39 +94,70 @@ struct SwipeDeckView: View {
             }
             filmstrip
                 .padding(.top, Spacing.s)
-            actionBar
-                .padding(.top, Spacing.m)
                 .padding(.bottom, Spacing.xs)
         }
         .frame(maxWidth: Theme.readableWidth)
         .frame(maxWidth: .infinity)
     }
 
+    /// Photo above a full-width filmstrip; the stars are in the bar.
     private var landscape: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: Spacing.xs) {
-                if let current = vm.current {
-                    card(current)
-                } else {
-                    endState
-                }
-                filmstrip
+        VStack(spacing: Spacing.xs) {
+            if let current = vm.current {
+                card(current)
+                    .padding(.horizontal, Spacing.m)
+            } else {
+                endState
             }
-            .padding(.vertical, Spacing.xs)
-            .padding(.leading, Spacing.m)
-            VStack(spacing: Spacing.l) {
-                Spacer(minLength: 0)
-                if let current = vm.current {
-                    RatingControl(rating: vm.rating(of: current)) { vm.setRating($0) }
-                }
-                actionBar
-                Spacer(minLength: 0)
-            }
-            .frame(width: 280)
+            filmstrip
         }
+        .padding(.top, Spacing.xxs)
+        .padding(.bottom, Spacing.xs)
     }
 
     // MARK: Header
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if isLandscape {
+            // Replaces the centered title: name and count sit on the left,
+            // next to the back button, as one line.
+            ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+            ToolbarItem(placement: .topBarLeading) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
+                    Text(vm.title)
+                        .font(.headline)
+                        .foregroundStyle(Theme.ink)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.inkSecondary)
+                }
+                .lineLimit(1)
+                // Toolbar items are proposed little width; keep it whole.
+                .fixedSize()
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            if let current = vm.current {
+                ToolbarItem(placement: .topBarTrailing) {
+                    RatingControl(rating: vm.rating(of: current), size: .header) { vm.setRating($0) }
+                        .padding(.horizontal, Spacing.xs)
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) { undoButton }
+        ToolbarItem(placement: .topBarTrailing) { menu }
+    }
+
+    private var undoButton: some View {
+        Button { withAnimation(.cardSpring) { drag = .zero }; vm.undo() } label: {
+            Label("Undo", systemImage: "arrow.uturn.backward")
+        }
+        .disabled(!vm.canUndo)
+    }
 
     private var subtitle: String {
         let total = vm.deck.count
@@ -160,6 +191,8 @@ struct SwipeDeckView: View {
                 .onTapGesture { fullScreen = current }
                 .gesture(dragGesture)
                 .accessibilityAction(named: "View Full Screen") { fullScreen = current }
+                .accessibilityAction(named: "Pick") { pick() }
+                .accessibilityAction(named: "Reject") { reject() }
                 .transition(.asymmetric(insertion: .scale(scale: 0.98).combined(with: .opacity),
                                         removal: .opacity))
         }
@@ -179,7 +212,7 @@ struct SwipeDeckView: View {
     private var intent: SwipeIntent? {
         guard drag != .zero else { return nil }
         if isVertical { return drag.height < 0 ? .pick : .reject }
-        return drag.width > 0 ? .up : .down
+        return drag.width > 0 ? .up : .skip
     }
 
     private var strength: Double {
@@ -195,7 +228,7 @@ struct SwipeDeckView: View {
                 if !vertical && t.width > Theme.swipeThreshold {
                     fling(.right) { vm.rate(.up) }
                 } else if !vertical && t.width < -Theme.swipeThreshold {
-                    fling(.left) { vm.rate(.down) }
+                    fling(.left) { vm.skip() }
                 } else if vertical && t.height < -Theme.swipeThreshold {
                     pick()
                 } else if vertical && t.height > Theme.swipeThreshold {
@@ -241,26 +274,6 @@ struct SwipeDeckView: View {
             Spacer()
         }
         .frame(maxHeight: .infinity)
-    }
-
-    // MARK: Action bar
-
-    private var actionBar: some View {
-        HStack(spacing: Spacing.xxl) {
-            RoundIconButton(systemImage: "xmark", label: "Reject") { reject() }
-            Button { withAnimation(.cardSpring) { drag = .zero }; vm.undo() } label: {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.body.weight(.light))
-                    .foregroundStyle(Theme.inkSecondary)
-                    .frame(width: 44, height: 44)
-            }
-            .opacity(vm.canUndo ? 1 : 0)
-            .disabled(!vm.canUndo)
-            .accessibilityLabel("Undo")
-            RoundIconButton(systemImage: "heart", label: "Pick") { pick() }
-        }
-        .frame(maxWidth: .infinity)
-        .disabled(vm.current == nil)
     }
 
     // MARK: Fling

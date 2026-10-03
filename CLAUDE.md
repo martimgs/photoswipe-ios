@@ -23,14 +23,16 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
 - Connections persist between launches. Swipe a row to disconnect — never touches the photos.
 
 ### Screen 2/3 — Swipe (rating)
-- Header: back, album name, "12 of 842" counter, "…" menu (min-rating filter, open grid).
-- Large rounded photo card, 5-star row below (tap = set exact rating), scrollable filmstrip
-  (tap to jump), X (reject) and heart (pick) buttons, Undo.
+- Header: back, album name, "12 of 842" counter, Undo, "…" menu (min-rating filter, open grid).
+- Large rounded photo card, 5-star row below (tap = set exact rating, tap the current star again = clear to 0), scrollable filmstrip
+  (tap to jump) at the bottom. No X / heart buttons: the photo gets the space.
+- Landscape: the stars move into the header row (album name and count on the left, stars and
+  "…" on the right), so the photo fills everything above the full-width filmstrip.
 - Gestures apply to the current photo, then advance:
-  right = +1 star, left = −1 star (min 0), up = pick (5 stars), down = reject
+  right = +1 star, left = next (rating unchanged), up = pick (5 stars), down = reject
   (hides the photo **and sets it to 0 stars**; Undo restores the previous rating,
   Restore from the Rejected tab leaves it at 0).
-  X = down, heart = up.
+  VoiceOver gets Pick / Reject as actions on the card.
 - While dragging, an overlay on the card shows the change (e.g. a large star).
 
 ### Screen 4 — Grid (review)

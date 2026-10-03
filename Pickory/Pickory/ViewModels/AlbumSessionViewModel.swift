@@ -174,11 +174,18 @@ final class AlbumSessionViewModel: ObservableObject {
 
     // MARK: Decisions
 
-    /// Swipe right/left/up or the heart button: change the rating, then advance.
+    /// Swipe right/up: change the rating, then advance.
     func rate(_ step: RatingStep) {
         guard let item = current else { return }
         let from = rating(of: item)
         record(.rate(step, from: from, to: step.apply(to: from)), on: item)
+        advance(from: item)
+    }
+
+    /// Swipe left: keep the rating and move to the next photo.
+    func skip() {
+        guard let item = current else { return }
+        record(.skip, on: item)
         advance(from: item)
     }
 
@@ -212,6 +219,8 @@ final class AlbumSessionViewModel: ObservableObject {
             apply(last.item, rating: from, rejected: isRejected(last.item))
         case .reject(let from):
             apply(last.item, rating: from, rejected: false)
+        case .skip:
+            break
         }
         currentID = last.item.id
         rememberPosition()
@@ -224,6 +233,8 @@ final class AlbumSessionViewModel: ObservableObject {
             apply(item, rating: to, rejected: isRejected(item))
         case .reject:
             apply(item, rating: 0, rejected: true)
+        case .skip:
+            break
         }
     }
 

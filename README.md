@@ -6,7 +6,7 @@
 
 **Rate and select your photos by swiping.**
 
-Connect an album, then swipe: right for +1 star, left for −1 star, up to pick
+Connect an album, then swipe: right for +1 star, left to move on unchanged, up to pick
 (5 stars), down to reject. Star ratings are saved to your Photos library.
 Pickory **never deletes photos**, and everything stays on your device.
 
@@ -57,9 +57,9 @@ flick, then review your picks in a grid filtered by rating.
 | Gesture | Action |
 |---|---|
 | Swipe **right** | +1 star (max 5) |
-| Swipe **left** | −1 star (min unrated) |
-| Swipe **up** / **heart** button | Pick: set to 5 stars |
-| Swipe **down** / **X** button | Reject: set to 0 stars and hide in Pickory (never deleted) |
+| Swipe **left** | Next photo, rating unchanged |
+| Swipe **up** | Pick: set to 5 stars |
+| Swipe **down** | Reject: set to 0 stars and hide in Pickory (never deleted) |
 | Tap a **star** | Set an exact rating (stays on the photo) |
 | Tap a **filmstrip** thumbnail | Jump to that photo |
 | **Undo** | Revert the last decision |

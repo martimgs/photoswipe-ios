@@ -2,12 +2,12 @@ import SwiftUI
 
 /// What a drag is about to do, shown as a white symbol over the dimmed card.
 enum SwipeIntent: Equatable {
-    case up, down, pick, reject
+    case up, skip, pick, reject
 
     var symbol: String {
         switch self {
         case .up: return "star.fill"
-        case .down: return "star.slash"
+        case .skip: return "arrow.left"
         case .pick: return "heart.fill"
         case .reject: return "xmark"
         }
@@ -16,7 +16,7 @@ enum SwipeIntent: Equatable {
     var caption: String {
         switch self {
         case .up: return "+1"
-        case .down: return "−1"
+        case .skip: return "Next"
         case .pick: return "Pick"
         case .reject: return "Reject"
         }
