@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "2700"
-   version = "1.7">
+   version = "2.3">
    <BuildAction
       parallelizeBuildables = "YES"
       buildImplicitDependencies = "YES"
@@ -42,7 +42,8 @@
       queueDebuggingEnabled = "No">
       <PathRunnable
          runnableDebuggingMode = "0"
-         FilePath = "/Users/martimguerrasilva/Library/Developer/Xcode/DerivedData/Pickory-fbdbnobmhdmboqbthzkyozjymkjn/Build/Products/Debug-iphoneos/Pickory.app">
+         Location = "workspace"
+         FilePath = "../../../Library/Developer/Xcode/DerivedData/Pickory-enmbxsaegplkxtdjaozlevmsatsm/Build/Products/Debug-iphoneos/Pickory.app">
       </PathRunnable>
    </LaunchAction>
    <ProfileAction
