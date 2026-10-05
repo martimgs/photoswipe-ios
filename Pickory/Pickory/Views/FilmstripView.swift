@@ -25,12 +25,25 @@ struct FilmstripView: View {
     private let stickiness = 0.2
     /// Release speed (pt/s) that counts as a flick; anything slower just stops.
     private let flickSpeed: CGFloat = 250
+    /// Finger movement (pt) before a touch becomes a scrub instead of a tap.
+    private let scrubSlop: CGFloat = 3
+    /// A single move larger than this (in photos) glides instead of jumping.
+    private let maxJump = 0.75
+    /// Glide speed, in photos per 8 ms tick (~1000 pt/s): fast enough to keep
+    /// up, slow enough to show every photo it passes.
+    private let glideStep = 0.35
 
     private struct Sample { let time: Date; let x: CGFloat }
 
     @State private var position: Double = 0
     @State private var reported: Int?
     @State private var dragStart: Double?
+    /// The finger has moved far enough for this touch to be a scrub.
+    @State private var moved = false
+    @State private var touchStart: Date?
+    /// Where the finger wants the strip while a glide catches up.
+    @State private var glideTarget: Double?
+    @State private var glide: Task<Void, Never>?
     @State private var samples: [Sample] = []
     @State private var momentum: Task<Void, Never>?
     @State private var scrubbing = false
@@ -57,11 +70,13 @@ struct FilmstripView: View {
             }
             .frame(width: geo.size.width, height: Self.height)
             .contentShape(Rectangle())
-            .onTapGesture { location in tap(atX: location.x - mid, in: range) }
-            .gesture(dragGesture)
+            .gesture(touchGesture(mid: mid, range: range))
         }
         .frame(height: Self.height)
         .clipped()
+        // The strip sits near the home indicator; without this the system
+        // holds touches back to check for a home swipe, so scrubs start late.
+        .defersSystemGestures(on: .bottom)
         .onChange(of: currentID, initial: true) { old, _ in follow(animated: old != currentID) }
         .onChange(of: photos) { follow(animated: false) }
         .accessibilityElement()
@@ -103,22 +118,42 @@ struct FilmstripView: View {
 
     // MARK: Interaction
 
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
+    /// Taps and scrubs in one gesture that sees the touch from the moment it
+    /// lands, so a scrub starts after a few points of movement instead of
+    /// waiting for a separate tap gesture to give up.
+    private func touchGesture(mid: CGFloat, range: Range<Int>) -> some Gesture {
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
                 if dragStart == nil {
+                    // Touching a coasting strip stops it, like a scroll view.
                     momentum?.cancel()
+                    stopGlide()
                     dragStart = position
+                    touchStart = value.time
+                    moved = false
                     samples = []
+                }
+                if !moved {
+                    guard abs(value.translation.width) >= scrubSlop else { return }
+                    moved = true
                     setScrubbing(true)
                 }
                 samples.append(Sample(time: value.time, x: value.translation.width))
                 samples.removeAll { value.time.timeIntervalSince($0.time) > 0.1 }
-                move(to: (dragStart ?? position) - Double(value.translation.width / step))
+                move(to: (dragStart ?? position) - Double(value.translation.width / step), glide: true)
             }
             .onEnded { value in
-                dragStart = nil
-                coast(velocity: -Double(releaseVelocity(at: value.time) / step))
+                defer { dragStart = nil; moved = false; touchStart = nil }
+                if moved {
+                    // Finish any glide first so the flick starts from the finger.
+                    if let target = glideTarget { stopGlide(); move(to: target) }
+                    coast(velocity: -Double(releaseVelocity(at: value.time) / step))
+                } else if let start = touchStart, value.time.timeIntervalSince(start) < 0.4 {
+                    tap(atX: value.location.x - mid, in: range)
+                } else if scrubbing {
+                    // Long press that caught a coasting strip: settle it.
+                    coast(velocity: 0)
+                }
             }
     }
 
@@ -141,6 +176,7 @@ struct FilmstripView: View {
             return abs(x - slot.x) <= slot.width / 2 + gap / 2
         }) else { return }
         momentum?.cancel()
+        stopGlide()
         setScrubbing(false)
         Haptics.tap()
         select(i)
@@ -148,10 +184,44 @@ struct FilmstripView: View {
     }
 
     /// Follow the finger; the photo nearest the middle becomes current.
-    private func move(to p: Double) {
+    /// With `glide`, a move too big for one step (the finger outran the
+    /// touch events) slides there instead, showing each photo on the way.
+    private func move(to p: Double, glide gliding: Bool = false) {
         guard !photos.isEmpty else { return }
-        position = min(max(p, 0), Double(photos.count - 1))
+        let target = min(max(p, 0), Double(photos.count - 1))
+        if gliding, glideTarget != nil || abs(target - position) > maxJump {
+            glideTarget = target
+            startGlide()
+            return
+        }
+        position = target
         select(nearest(to: position))
+    }
+
+    private func startGlide() {
+        guard glide == nil else { return }
+        glide = Task { @MainActor in
+            while let target = glideTarget, !Task.isCancelled {
+                let delta = target - position
+                if abs(delta) <= glideStep {
+                    glideTarget = nil
+                    position = target
+                    select(nearest(to: position))
+                    break
+                }
+                position += delta > 0 ? glideStep : -glideStep
+                select(nearest(to: position))
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+            // A cancelled glide may already have been replaced.
+            if !Task.isCancelled { glide = nil }
+        }
+    }
+
+    private func stopGlide() {
+        glide?.cancel()
+        glide = nil
+        glideTarget = nil
     }
 
     /// The photo at `p`, sticking with the current one until the strip is
