@@ -6,6 +6,7 @@ struct PickoryApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var dropbox = DropboxAuth.shared
     @StateObject private var sync = DropboxSyncEngine.shared
+    @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     private let container: ModelContainer
 
     init() {
@@ -32,6 +33,8 @@ struct PickoryApp: App {
                 .onChange(of: dropbox.isSignedIn) { _, signedIn in
                     if signedIn { sync.scheduleSync() }
                 }
+                .onAppear { Appearance.current.apply() }
+                .onChange(of: appearance) { Appearance.current.apply() }
         }
         .modelContainer(container)
     }

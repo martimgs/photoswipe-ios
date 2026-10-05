@@ -10,6 +10,7 @@ struct SettingsView: View {
     @ObservedObject private var connectivity = Connectivity.shared
     @State private var confirmSignOut = false
     @AppStorage(OfflineDownloadManager.qualityKey) private var quality = DownloadQuality.optimized.rawValue
+    @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @State private var estimates: (optimized: Int64, originals: Int64, photos: Int) = (0, 0, 0)
 
     var body: some View {
@@ -75,6 +76,21 @@ struct SettingsView: View {
                     Text("Offline downloads")
                 } footer: {
                     Text("Used when you make a Dropbox album available offline. Optimized saves Dropbox-rendered copies up to 2048 px; Originals saves the full files. Sizes are for all \(estimates.photos) photos in your Dropbox albums; the Optimized size is an estimate.")
+                }
+                .listRowBackground(Theme.surface)
+
+                Section {
+                    Picker("Appearance", selection: $appearance) {
+                        ForEach(Appearance.allCases, id: \.self) { a in
+                            Text(a.title).tag(a.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("Automatic follows the Light or Dark setting on your device.")
                 }
                 .listRowBackground(Theme.surface)
 
