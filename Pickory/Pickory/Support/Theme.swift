@@ -60,8 +60,6 @@ extension Font {
 extension Animation {
     /// Card settle / return — snappy with a touch of life.
     static let cardSpring = Animation.spring(response: 0.34, dampingFraction: 0.78)
-    /// Fling-off easing (exit). Fast accelerate.
-    static let fling = Animation.easeIn(duration: 0.26)
     /// Press micro-interaction.
     static let press = Animation.spring(response: 0.22, dampingFraction: 0.6)
 }

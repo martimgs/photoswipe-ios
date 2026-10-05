@@ -20,6 +20,8 @@ struct SwipeDeckView: View {
     var onOpenGrid: () -> Void
 
     @State private var drag: CGSize = .zero
+    /// A card flying off screen whose decision hasn't been committed yet.
+    @State private var flight: Flight?
     @State private var fullScreen: PhotoItem?
     /// Largest pixel dimension of the card area, used for prefetch sizing.
     @State private var cardPixelSide: CGFloat = 0
@@ -69,7 +71,7 @@ struct SwipeDeckView: View {
 
     private var filmstrip: some View {
         FilmstripView(photos: vm.deck, currentID: vm.currentID,
-                      onSelect: { vm.jump(to: $0, remember: !scrubbing) },
+                      onSelect: { land(); vm.jump(to: $0, remember: !scrubbing) },
                       onScrubbingChanged: { active in
                           scrubbing = active
                           if !active {
@@ -153,7 +155,7 @@ struct SwipeDeckView: View {
     }
 
     private var undoButton: some View {
-        Button { withAnimation(.cardSpring) { drag = .zero }; vm.undo() } label: {
+        Button { land(); withAnimation(.cardSpring) { drag = .zero }; vm.undo() } label: {
             Label("Undo", systemImage: "arrow.uturn.backward")
         }
         .disabled(!vm.canUndo)
@@ -181,22 +183,34 @@ struct SwipeDeckView: View {
 
     // MARK: Card
 
+    /// The current photo on top of the next one. Both are keyed by photo id,
+    /// so when a swipe commits, the card underneath simply becomes the
+    /// current card (same view, image already loaded): nothing fades or
+    /// reloads. Scrubbing and filmstrip taps just swap the cards.
     private func card(_ current: PhotoItem) -> some View {
-        ZStack {
-            PhotoCardView(item: current, intent: intent, intentStrength: strength)
-                .id(current.id)
-                .offset(drag)
-                .rotationEffect(.degrees(Double(drag.width / 18)), anchor: .bottom)
-                // Tap = full screen; a drag of 10+ pt is a swipe instead.
-                .onTapGesture { fullScreen = current }
-                .gesture(dragGesture)
-                .accessibilityAction(named: "View Full Screen") { fullScreen = current }
-                .accessibilityAction(named: "Pick") { pick() }
-                .accessibilityAction(named: "Reject") { reject() }
-                .transition(.asymmetric(insertion: .scale(scale: 0.98).combined(with: .opacity),
-                                        removal: .opacity))
+        let stack = [vm.next, current].compactMap { $0 }
+        return ZStack {
+            ForEach(stack) { item in
+                let isCurrent = item.id == current.id
+                PhotoCardView(item: item,
+                              intent: isCurrent ? intent : nil,
+                              intentStrength: isCurrent ? strength : 0)
+                    .modifier(DeckCardStyle(isCurrent: isCurrent, drag: drag, progress: progress))
+                    .zIndex(isCurrent ? 1 : 0)
+                    .allowsHitTesting(isCurrent)
+                    .accessibilityHidden(!isCurrent)
+                    .transition(.identity)
+            }
         }
-        .animation(scrubbing ? nil : .cardSpring, value: vm.currentID)
+        .contentShape(Rectangle())
+        // Tap = full screen; a drag of 10+ pt is a swipe instead. On the
+        // whole area, so a new swipe can start while the last card flies off.
+        .onTapGesture { land(); fullScreen = vm.current }
+        .gesture(dragGesture)
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "View Full Screen") { fullScreen = current }
+        .accessibilityAction(named: "Pick") { pick() }
+        .accessibilityAction(named: "Reject") { reject() }
         .frame(maxHeight: .infinity)
         // Measure the card area so prefetchAround() uses the right pixel size.
         .background(
@@ -206,6 +220,10 @@ struct SwipeDeckView: View {
             }
         )
     }
+
+    /// 0 at rest, 1 once the drag reaches the swipe threshold (or the card
+    /// is flying off).
+    private var progress: Double { min(strength, 1) }
 
     private var isVertical: Bool { abs(drag.height) > abs(drag.width) }
 
@@ -221,18 +239,23 @@ struct SwipeDeckView: View {
 
     private var dragGesture: some Gesture {
         DragGesture()
-            .onChanged { drag = $0.translation }
+            .onChanged { value in
+                if flight != nil { land() }
+                drag = value.translation
+            }
             .onEnded { value in
+                guard flight == nil else { return }
                 let t = value.translation
+                let v = value.velocity
                 let vertical = abs(t.height) > abs(t.width)
                 if !vertical && t.width > Theme.swipeThreshold {
-                    fling(.right) { vm.rate(.up) }
+                    fling(.right, velocity: v) { vm.rate(.up) }
                 } else if !vertical && t.width < -Theme.swipeThreshold {
-                    fling(.left) { vm.skip() }
+                    fling(.left, velocity: v) { vm.skip() }
                 } else if vertical && t.height < -Theme.swipeThreshold {
-                    pick()
+                    pick(velocity: v)
                 } else if vertical && t.height > Theme.swipeThreshold {
-                    reject()
+                    reject(velocity: v)
                 } else {
                     Haptics.soft()
                     withAnimation(.cardSpring) { drag = .zero }
@@ -280,31 +303,84 @@ struct SwipeDeckView: View {
 
     private enum FlingDir { case left, right, up, down }
 
-    private func pick() {
+    private struct Flight {
+        let token: UUID
+        let photoID: String
+        let commit: () -> Void
+    }
+
+    private func pick(velocity: CGSize = .zero) {
         Haptics.success()
-        fling(.up) { vm.rate(.pick) }
+        fling(.up, velocity: velocity) { vm.rate(.pick) }
     }
 
-    private func reject() {
+    private func reject(velocity: CGSize = .zero) {
         Haptics.tap(.rigid)
-        fling(.down) { vm.reject() }
+        fling(.down, velocity: velocity) { vm.reject() }
     }
 
-    private func fling(_ dir: FlingDir, commit: @escaping () -> Void) {
+    /// Sends the current card off screen, carrying on at the finger's speed,
+    /// and commits the decision once it's gone. The next card is already
+    /// underneath, growing into place as the top card leaves.
+    private func fling(_ dir: FlingDir, velocity: CGSize, commit: @escaping () -> Void) {
+        if flight != nil { land() }
+        guard let id = vm.currentID else { return }
         if dir == .left || dir == .right { Haptics.tap(.light) }
         let target: CGSize
+        let speed: CGFloat
         switch dir {
-        case .left:  target = CGSize(width: -760, height: 60)
-        case .right: target = CGSize(width: 760, height: 60)
-        case .up:    target = CGSize(width: drag.width, height: -1000)
-        case .down:  target = CGSize(width: drag.width, height: 1000)
+        case .left:  target = CGSize(width: -900, height: drag.height + 60); speed = -velocity.width
+        case .right: target = CGSize(width: 900, height: drag.height + 60);  speed = velocity.width
+        case .up:    target = CGSize(width: drag.width, height: -1100);       speed = -velocity.height
+        case .down:  target = CGSize(width: drag.width, height: 1100);        speed = velocity.height
         }
-        withAnimation(.fling) { drag = target }
-        // Let the card fly off before committing the decision and resetting.
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
-            commit()
+        let distance = max(hypot(target.width - drag.width, target.height - drag.height), 1)
+        // Spring velocity is in fractions of the distance per second.
+        let initial = Double(max(speed, 0) / distance)
+        let token = UUID()
+        flight = Flight(token: token, photoID: id, commit: commit)
+        withAnimation(.interpolatingSpring(duration: 0.32, bounce: 0, initialVelocity: initial),
+                      completionCriteria: .logicallyComplete) {
+            drag = target
+        } completion: {
+            if flight?.token == token { land() }
+        }
+    }
+
+    /// Commits the flying card's decision and resets, without animation:
+    /// the card is off screen and the one underneath is already in place.
+    /// Also called early when a new swipe or tap starts mid-flight.
+    private func land() {
+        guard let f = flight else { return }
+        flight = nil
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            // Only if the user hasn't moved elsewhere (filmstrip) meanwhile.
+            if vm.currentID == f.photoID { f.commit() }
             drag = .zero
+        }
+    }
+}
+
+/// Top card follows the finger; the card underneath sits a little smaller
+/// and hidden at rest (photos differ in shape, so it would peek out), and
+/// comes up to full size as the drag progresses.
+private struct DeckCardStyle: ViewModifier {
+    let isCurrent: Bool
+    let drag: CGSize
+    let progress: Double
+
+    func body(content: Content) -> some View {
+        if isCurrent {
+            content
+                .offset(drag)
+                .rotationEffect(.degrees(Double(drag.width / 18)), anchor: .bottom)
+        } else {
+            content
+                .scaleEffect(0.94 + 0.06 * progress)
+                // Revealed by the first part of the drag, in step with the finger.
+                .opacity(min(progress * 2.5, 1))
         }
     }
 }
