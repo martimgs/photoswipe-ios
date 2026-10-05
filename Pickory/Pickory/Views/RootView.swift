@@ -1,9 +1,10 @@
 import SwiftUI
 import Photos
 
-/// Asks for photo access once, then shows the Library.
+/// Shows the splash, asks for photo access once, then shows the Library.
 struct RootView: View {
     @State private var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @State private var showSplash = true
 
     var body: some View {
         Group {
@@ -30,6 +31,15 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.paper.ignoresSafeArea())
+        .overlay {
+            if showSplash {
+                SplashView().transition(.opacity)
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(1.2))
+            withAnimation(.easeOut(duration: 0.35)) { showSplash = false }
+        }
     }
 }
 

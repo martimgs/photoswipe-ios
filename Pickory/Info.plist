@@ -18,5 +18,10 @@
 		<string>dbapi-8-emm</string>
 		<string>dbapi-2</string>
 	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>Background</string>
+	</dict>
 </dict>
 </plist>
