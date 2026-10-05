@@ -190,7 +190,11 @@ struct SwipeDeckView: View {
     /// loaded) and the swiped one flies off from where the finger left it:
     /// nothing fades. Scrubbing and filmstrip taps just swap the cards.
     private func card(_ current: PhotoItem) -> some View {
-        let base = [vm.next, current].compactMap { $0 }
+        // The next card only exists while a swipe is under way (it's hidden
+        // at rest anyway). Keeping a second card in the stack while the
+        // filmstrip changes the current photo garbles the strip's drag.
+        let showNext = !scrubbing && (drag != .zero || !flyers.isEmpty)
+        let base = [showNext ? vm.next : nil, current].compactMap { $0 }
         let flying = flyers.filter { f in !base.contains { $0.id == f.id } }
         return ZStack {
             ForEach(base) { item in
