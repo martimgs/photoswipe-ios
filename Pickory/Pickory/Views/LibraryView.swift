@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import Photos
 
-/// Landing screen ("Albums"): the albums the user has connected, plus a
+/// Landing screen: a fixed logo header over the albums the user has connected, plus a
 /// "Connect Album" row. Swiping a row away disconnects it — the photos
 /// themselves are never touched.
 struct LibraryView: View {
@@ -10,18 +10,14 @@ struct LibraryView: View {
     @Query(sort: \ConnectedAlbum.dateAdded) private var albums: [ConnectedAlbum]
     @State private var showConnect = false
     @State private var showSettings = false
+    /// The list is scrolled under the header: show its divider.
+    @State private var scrolled = false
     /// Expanded albums ("albumID") and subfolders ("albumID|path").
     @State private var expanded: Set<String> = []
 
     var body: some View {
         NavigationStack {
             List {
-                header
-                    .listRowInsets(EdgeInsets(top: Spacing.xs, leading: Spacing.margin,
-                                              bottom: Spacing.l, trailing: Spacing.margin))
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Theme.paper)
-
                 ForEach(albums) { album in
                     let folders = folderTree(for: album)
                     NavigationLink(value: AlbumRoute(album: album)) {
@@ -60,10 +56,19 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .contentMargins(.top, Spacing.s, for: .scrollContent)
             .frame(maxWidth: Theme.readableWidth)
             .frame(maxWidth: .infinity)
+            // Stays put; the albums scroll under it.
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentOffset.y + geo.contentInsets.top > 1
+            } action: { _, isScrolled in
+                withAnimation(.easeOut(duration: 0.15)) { scrolled = isScrolled }
+            }
+            .safeAreaBar(edge: .top) { header }
+            .scrollEdgeEffectHidden(true, for: .top)
             .background(Theme.paper)
-            .navigationTitle("Albums")
+            .navigationTitle("Pickory")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AlbumRoute.self) { route in
                 AlbumScreen(route: route)
@@ -78,22 +83,42 @@ struct LibraryView: View {
         .tint(Theme.ink)
     }
 
+    /// Logo left, name centered, settings right.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Albums")
-                .font(.screenTitle)
-                .foregroundStyle(Theme.ink)
-                .accessibilityAddTraits(.isHeader)
+        HStack {
+            Image(.splashLogo)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 26, height: 26)
+                .accessibilityHidden(true)
             Spacer()
             Button { showSettings = true } label: {
                 Image(systemName: "gearshape")
-                    .font(.title3.weight(.light))
+                    .font(.body.weight(.light))
                     .foregroundStyle(Theme.ink)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .padding(.trailing, -Spacing.xs)   // glyph lines up with the row chevrons
+            .padding(.trailing, -Spacing.s)   // glyph lines up with the row chevrons
             .accessibilityLabel("Settings")
+        }
+        .overlay {
+            Image(.splashName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 150)
+                .foregroundStyle(Theme.ink)
+                .accessibilityLabel("Pickory")
+                .accessibilityAddTraits(.isHeader)
+        }
+        .padding(.horizontal, Spacing.margin)
+        .padding(.vertical, Spacing.xxs)
+        .frame(maxWidth: Theme.readableWidth)
+        .frame(maxWidth: .infinity)
+        .background(Theme.paper.ignoresSafeArea(edges: .top))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.hairline).frame(height: 0.5)
+                .opacity(scrolled ? 1 : 0)
         }
     }
 
@@ -168,7 +193,7 @@ struct AlbumRow: View {
     @Environment(\.modelContext) private var context
 
     var body: some View {
-        HStack(spacing: Spacing.m) {
+        HStack(spacing: 20) {
             Group {
                 if let cover = info?.cover {
                     Thumbnail(item: cover, side: Thumbnail.album)
@@ -178,13 +203,14 @@ struct AlbumRow: View {
                         .frame(width: Thumbnail.album, height: Thumbnail.album)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(info?.name ?? album.name)
-                    .font(.rowTitle)
+                    .font(.callout)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
+                    .padding(.bottom, 2)
                 Text(subtitle)
-                    .font(.metadata)
+                    .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
                 if folderCount > 0 {
                     FolderToggle(count: folderCount, isExpanded: isExpanded, action: onToggleFolders)
@@ -274,7 +300,7 @@ struct FolderRow: View {
     let onToggle: () -> Void
 
     var body: some View {
-        HStack(spacing: Spacing.s) {
+        HStack(spacing: 20) {
             Group {
                 if let cover = node.cover {
                     Thumbnail(item: cover, side: Thumbnail.folder)
@@ -284,9 +310,9 @@ struct FolderRow: View {
                         .frame(width: Thumbnail.folder, height: Thumbnail.folder)
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(node.name)
-                    .font(.metadata)
+                    .font(.subheadline)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -303,7 +329,8 @@ struct FolderRow: View {
             AlbumStatusButton(album: album, folder: node.path, hidesWhenSameAsAlbum: true)
             RowChevron()
         }
-        .padding(.leading, CGFloat(depth) * Spacing.l)
+        // Top-level folders line up with the album; deeper ones indent.
+        .padding(.leading, CGFloat(depth - 1) * Spacing.l)
     }
 }
 

@@ -3,8 +3,8 @@ import SwiftUI
 /// Small square async thumbnail for grids, filmstrips and album rows.
 struct Thumbnail: View {
     /// Shared sizes, so rows across screens line up.
-    static let album: CGFloat = 72
-    static let folder: CGFloat = 54
+    static let album: CGFloat = 96
+    static let folder: CGFloat = 60
 
     let item: PhotoItem
     var side: CGFloat = Thumbnail.album
