@@ -20,10 +20,18 @@ struct FilmstripView: View {
     private let gap: CGFloat = 2
     private var step: CGFloat { sliver + gap }
     private var extra: CGFloat { Self.height - sliver }
+    /// How far past the halfway point (in photos) the strip must move before
+    /// the current photo changes, so small wobbles and finger roll don't.
+    private let stickiness = 0.2
+    /// Release speed (pt/s) that counts as a flick; anything slower just stops.
+    private let flickSpeed: CGFloat = 250
+
+    private struct Sample { let time: Date; let x: CGFloat }
 
     @State private var position: Double = 0
     @State private var reported: Int?
     @State private var dragStart: Double?
+    @State private var samples: [Sample] = []
     @State private var momentum: Task<Void, Never>?
     @State private var scrubbing = false
 
@@ -36,7 +44,7 @@ struct FilmstripView: View {
         GeometryReader { geo in
             let mid = geo.size.width / 2
             let range = visibleRange(width: geo.size.width)
-            let center = Int(position.rounded())
+            let center = reported ?? Int(position.rounded())
             ZStack {
                 ForEach(range, id: \.self) { i in
                     let slot = layout(i)
@@ -101,14 +109,30 @@ struct FilmstripView: View {
                 if dragStart == nil {
                     momentum?.cancel()
                     dragStart = position
+                    samples = []
                     setScrubbing(true)
                 }
+                samples.append(Sample(time: value.time, x: value.translation.width))
+                samples.removeAll { value.time.timeIntervalSince($0.time) > 0.1 }
                 move(to: (dragStart ?? position) - Double(value.translation.width / step))
             }
             .onEnded { value in
                 dragStart = nil
-                coast(velocity: -Double(value.velocity.width / step))
+                coast(velocity: -Double(releaseVelocity(at: value.time) / step))
             }
+    }
+
+    /// Finger speed over the last moments of the drag, or 0 unless it was a
+    /// real flick. `DragGesture`'s own velocity includes the finger rolling
+    /// off the glass, which made slow, careful scrubs slide on release.
+    private func releaseVelocity(at end: Date) -> CGFloat {
+        let recent = samples.filter { end.timeIntervalSince($0.time) <= 0.08 }
+        samples = []
+        guard let first = recent.first, let last = recent.last else { return 0 }
+        let dt = last.time.timeIntervalSince(first.time)
+        guard dt > 0.01 else { return 0 }
+        let v = (last.x - first.x) / dt
+        return abs(v) >= flickSpeed ? v : 0
     }
 
     private func tap(atX x: CGFloat, in range: Range<Int>) {
@@ -127,7 +151,14 @@ struct FilmstripView: View {
     private func move(to p: Double) {
         guard !photos.isEmpty else { return }
         position = min(max(p, 0), Double(photos.count - 1))
-        select(Int(position.rounded()))
+        select(nearest(to: position))
+    }
+
+    /// The photo at `p`, sticking with the current one until the strip is
+    /// clearly past the halfway point to the next.
+    private func nearest(to p: Double) -> Int {
+        if let cur = reported, abs(p - Double(cur)) < 0.5 + stickiness { return cur }
+        return Int(p.rounded())
     }
 
     private func select(_ i: Int) {
@@ -154,8 +185,9 @@ struct FilmstripView: View {
                 if position == before { break }   // hit either end
             }
             guard !Task.isCancelled else { return }
-            let target = position.rounded()
-            select(Int(target))
+            let i = nearest(to: position)
+            select(i)
+            let target = Double(i)
             withAnimation(.snappy(duration: 0.18)) { position = target }
             setScrubbing(false)
         }
