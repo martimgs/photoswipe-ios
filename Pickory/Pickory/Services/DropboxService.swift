@@ -146,6 +146,7 @@ final class DropboxService {
                         if changed {
                             record.contentHash = file.contentHash
                             summary.updated.append(file.id)
+                            ThumbnailCache.remove(file.id)
                         }
                     } else {
                         let record = DropboxFile(
@@ -192,6 +193,7 @@ final class DropboxService {
         await DropboxSyncEngine.shared.importTags(for: newFiles, context: context)
         album.lastCheckedAt = .now
         try? context.save()
+        OfflineDownloadManager.shared.filesChanged(albumID: albumID)
         return summary
     }
 
@@ -216,35 +218,62 @@ final class DropboxService {
 
     // MARK: Thumbnails (online-only photos)
 
-    private var thumbnailCache: URL {
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("DropboxThumbnails", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    /// A Dropbox-rendered JPEG sized for the request, cached in Caches (fine to
-    /// lose; it's re-fetched when online). Falls back to the original file for
-    /// formats Dropbox can't thumbnail (e.g. HEIC), downsampled on device.
+    /// A Dropbox-rendered JPEG sized for the request, saved in
+    /// `ThumbnailCache` (callers check the disk first). Falls back to the
+    /// original file only for formats Dropbox can't render (e.g. some HEIC).
     func thumbnail(fileID: String, maxPixels: CGFloat) async -> UIImage? {
-        let size: Files.ThumbnailSize = maxPixels <= 256 ? .w256h256 : maxPixels <= 1024 ? .w1024h768 : .w2048h1536
-        let cached = thumbnailCache.appendingPathComponent("\(OfflineStore.fileName(for: fileID))-\(size).jpg")
-        if FileManager.default.fileExists(atPath: cached.path) {
-            return await ImageLoader.downsample(cached, maxPixels: maxPixels)
-        }
         guard Connectivity.shared.isOnline, let client = try? client else { return nil }
+        let bucket = ThumbnailCache.bucket(for: maxPixels)
+        let url = ThumbnailCache.url(fileID, bucket: bucket)
         do {
             _ = try await client.files.getThumbnailV2(
-                resource: .path(fileID), format: .jpeg, size: size, mode: .bestfit,
-                overwrite: true, destination: cached).response()
-            return await ImageLoader.downsample(cached, maxPixels: maxPixels)
+                resource: .path(fileID), format: .jpeg, size: ThumbnailCache.sizes[bucket].size,
+                mode: .bestfit, overwrite: true, destination: url).response()
+            return await ImageLoader.downsample(url, maxPixels: maxPixels)
         } catch {
-            let original = thumbnailCache.appendingPathComponent(OfflineStore.fileName(for: fileID) + "-original")
+            try? FileManager.default.removeItem(at: url)
+            guard ThumbnailCache.isUnrenderable(error) else { return nil }
+            let original = ThumbnailCache.originalURL(fileID)
             if !FileManager.default.fileExists(atPath: original.path) {
                 guard (try? await client.files.download(path: fileID, overwrite: true, destination: original).response()) != nil
                 else { return nil }
             }
             return await ImageLoader.downsample(original, maxPixels: maxPixels)
+        }
+    }
+
+    /// Covers already fetched or on their way, this run.
+    private var coversRequested: Set<String> = []
+
+    /// Album and folder covers, 25 per request, so a list of folders shows
+    /// its covers at once instead of starting a request per row.
+    func prefetchCovers(_ fileIDs: [String]) async {
+        guard Connectivity.shared.isOnline, let client = try? client else { return }
+        let candidates = fileIDs.filter { coversRequested.insert($0).inserted }
+        guard !candidates.isEmpty else { return }
+        let needed = await Task.detached(priority: .utility) {
+            candidates.filter { !ThumbnailCache.hasCover($0) }
+        }.value
+        let bucket = ThumbnailCache.coverBucket
+        for start in stride(from: 0, to: needed.count, by: 25) {
+            let chunk = Array(needed[start..<min(start + 25, needed.count)])
+            let entries = chunk.map {
+                Files.ThumbnailArg(path: $0, format: .jpeg, size: ThumbnailCache.sizes[bucket].size, mode: .bestfit)
+            }
+            guard let result = try? await client.files.getThumbnailBatch(entries: entries).response() else {
+                coversRequested.subtract(needed[start...])   // try again next time
+                return
+            }
+            let thumbnails: [(String, String)] = zip(chunk, result.entries).compactMap { id, entry in
+                if case .success(let data) = entry { return (id, data.thumbnail) }
+                return nil
+            }
+            await Task.detached(priority: .utility) {
+                for (id, base64) in thumbnails {
+                    guard let data = Data(base64Encoded: base64) else { continue }
+                    try? data.write(to: ThumbnailCache.url(id, bucket: bucket), options: .atomic)
+                }
+            }.value
         }
     }
 }

@@ -36,6 +36,8 @@ final class AlbumSessionViewModel: ObservableObject {
     @Published private(set) var rejectedIDs: Set<String> = []
     @Published private(set) var ratings: [String: Int] = [:]
     @Published private(set) var history: [SwipeAction] = []
+    /// Soft crops by photo ID, shown on the card and in the grid.
+    @Published private(set) var crops: [String: SoftCrop] = [:]
 
     private var context: ModelContext?
     private var backend: RatingBackend?
@@ -50,6 +52,8 @@ final class AlbumSessionViewModel: ObservableObject {
     func rating(of item: PhotoItem) -> Int { ratings[item.id] ?? 0 }
 
     func isRejected(_ item: PhotoItem) -> Bool { rejectedIDs.contains(item.id) }
+
+    func crop(of item: PhotoItem) -> SoftCrop? { crops[item.id] }
 
     /// What the swipe deck and filmstrip show: not rejected, at or above the
     /// rating filter.
@@ -126,6 +130,13 @@ final class AlbumSessionViewModel: ObservableObject {
         guard let backend else { return }
         ratings = backend.ratings(for: photos)
         rejectedIDs = backend.rejectedIDs(for: photos).intersection(photos.map(\.id))
+        reloadCrops()
+    }
+
+    /// Re-read soft crops, e.g. after the full-screen viewer saved one.
+    func reloadCrops() {
+        guard let context else { return }
+        crops = PhotoStateStore(context: context).crops(source: album.source)
     }
 
     static func dropboxItems(albumID: String, context: ModelContext) -> [PhotoItem] {

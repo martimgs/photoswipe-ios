@@ -14,14 +14,16 @@ struct LibraryView: View {
     @State private var scrolled = false
     /// Expanded albums ("albumID") and subfolders ("albumID|path").
     @State private var expanded: Set<String> = []
+    @State private var summaries = DropboxSummaryCache()
 
     var body: some View {
         NavigationStack {
             List {
                 ForEach(albums) { album in
-                    let folders = folderTree(for: album)
+                    let summary = dropboxSummary(for: album)
+                    let folders = summary?.folders ?? []
                     NavigationLink(value: AlbumRoute(album: album)) {
-                        AlbumRow(album: album, folderCount: folders.count,
+                        AlbumRow(album: album, summary: summary, folderCount: folders.count,
                                  isExpanded: expanded.contains(album.externalID)) {
                             toggle(album.externalID)
                         }
@@ -135,10 +137,23 @@ struct LibraryView: View {
     // MARK: Subfolders
 
     /// Subfolders of a Dropbox album (empty for Apple Photos albums).
-    private func folderTree(for album: ConnectedAlbum) -> [FolderNode] {
-        guard album.source == .dropbox else { return [] }
-        _ = album.lastCheckedAt   // re-read after each check for changes
-        return FolderNode.tree(from: AlbumSessionViewModel.dropboxItems(albumID: album.externalID, context: context))
+    /// Count, cover and folders of a Dropbox album (nil for Apple Photos).
+    /// Built once per check for changes: it fetches and sorts every file in
+    /// the album, and the list redraws often (e.g. while downloading).
+    private func dropboxSummary(for album: ConnectedAlbum) -> DropboxSummary? {
+        guard album.source == .dropbox else { return nil }
+        let checked = album.lastCheckedAt
+        if let cached = summaries.byAlbum[album.externalID], cached.checked == checked {
+            return cached
+        }
+        let items = AlbumSessionViewModel.dropboxItems(albumID: album.externalID, context: context)
+        let summary = DropboxSummary(checked: checked, count: items.count, cover: items.first,
+                                     folders: FolderNode.tree(from: items))
+        summaries.byAlbum[album.externalID] = summary
+        // All covers in a few batched requests, before any folder is expanded.
+        let covers = summary.coverIDs
+        Task { await DropboxService.shared.prefetchCovers(covers) }
+        return summary
     }
 
     private func key(_ album: ConnectedAlbum, _ node: FolderNode) -> String {
@@ -168,8 +183,8 @@ struct LibraryView: View {
     /// downloaded copies are deleted; files in Dropbox are never touched.
     /// Ratings and any pending tag syncs are kept.
     private func disconnect(_ album: ConnectedAlbum) {
+        let albumID = album.externalID
         if album.source == .dropbox {
-            let albumID = album.externalID
             let files = (try? context.fetch(FetchDescriptor<DropboxFile>(
                 predicate: #Predicate { $0.albumID == albumID }))) ?? []
             for file in files {
@@ -179,13 +194,38 @@ struct LibraryView: View {
         }
         context.delete(album)
         try? context.save()
+        OfflineDownloadManager.shared.filesChanged(albumID: albumID)
     }
+}
+
+/// What the library shows for a Dropbox album, as of its last check for changes.
+struct DropboxSummary {
+    var checked: Date?
+    var count: Int
+    var cover: PhotoItem?
+    var folders: [FolderNode]
+
+    /// The album's cover, then every folder's (all levels).
+    var coverIDs: [String] {
+        func ids(_ nodes: [FolderNode]) -> [String] {
+            nodes.flatMap { [$0.cover?.id].compactMap { $0 } + ids($0.children) }
+        }
+        return [cover?.id].compactMap { $0 } + ids(folders)
+    }
+}
+
+/// Summaries by album ID. A plain class so filling it during `body`
+/// doesn't redraw.
+final class DropboxSummaryCache {
+    var byAlbum: [String: DropboxSummary] = [:]
 }
 
 /// One connected album: cover, name, photo count. Shows "Unavailable" if the
 /// album no longer exists at its source.
 struct AlbumRow: View {
     let album: ConnectedAlbum
+    /// Dropbox albums: already counted by the list, so nothing loads here.
+    var summary: DropboxSummary?
     var folderCount = 0
     var isExpanded = false
     var onToggleFolders: () -> Void = {}
@@ -193,6 +233,8 @@ struct AlbumRow: View {
     @Environment(\.modelContext) private var context
 
     var body: some View {
+        let info = summary.map { AlbumInfo(name: album.name, count: $0.count, cover: $0.cover, isAvailable: true) }
+            ?? self.info
         HStack(spacing: 20) {
             Group {
                 if let cover = info?.cover {
@@ -209,7 +251,7 @@ struct AlbumRow: View {
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .padding(.bottom, 2)
-                Text(subtitle)
+                Text(subtitle(info))
                     .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
                 if folderCount > 0 {
@@ -225,11 +267,12 @@ struct AlbumRow: View {
         }
         // Re-read after each Dropbox "check for changes".
         .task(id: "\(album.externalID)|\(album.lastCheckedAt?.timeIntervalSince1970 ?? 0)") {
-            info = AlbumInfo.load(album, context: context)
+            guard summary == nil else { return }
+            self.info = AlbumInfo.load(album, context: context)
         }
     }
 
-    private var subtitle: String {
+    private func subtitle(_ info: AlbumInfo?) -> String {
         guard let info else { return " " }
         guard info.isAvailable else { return "Unavailable" }
         return info.count == 1 ? "1 photo" : "\(info.count.formatted()) photos"

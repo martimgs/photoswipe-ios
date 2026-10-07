@@ -3,7 +3,9 @@ import SwiftData
 
 /// Export the photos shown in the grid into a Dropbox folder. The folder
 /// browser opens at the folder being viewed (Back walks up its parents),
-/// so saving to a nearby or new folder takes a tap or two.
+/// so saving to a nearby or new folder takes a tap or two. Photos with a
+/// soft crop are saved twice: uncropped and cropped (an 8:5 carousel crop
+/// also as its two 4:5 posts).
 struct ExportSheet: View {
     let items: [PhotoItem]
     let album: ConnectedAlbum
@@ -56,19 +58,32 @@ struct ExportSheet: View {
 
     // MARK: Export
 
+    /// Saved soft crops for the photos being exported.
+    private var crops: [String: SoftCrop] {
+        let ids = Set(items.map(\.id))
+        return PhotoStateStore(context: context).crops(source: album.source).filter { ids.contains($0.key) }
+    }
+
     private func export(to destination: String) {
-        phase = .exporting(done: 0, total: items.count, folder: destination)
+        let crops = self.crops
+        let total = items.count + crops.values.map(ExportService.cropFileCount).reduce(0, +)
+        phase = .exporting(done: 0, total: total, folder: destination)
         Task {
             do {
                 let update: (Int) -> Void = { done in
-                    phase = .exporting(done: done, total: items.count, folder: destination)
+                    phase = .exporting(done: done, total: total, folder: destination)
                 }
                 let result: ExportService.Result
                 switch album.source {
                 case .dropbox:
-                    result = try await ExportService.shared.copyDropboxFiles(dropboxFiles(), to: destination, progress: update)
+                    let files = dropboxFiles()
+                    let copied = try await ExportService.shared.copyDropboxFiles(files, to: destination, progress: update)
+                    let cropped = files.compactMap { f in crops[f.fileID].map { (fileID: f.fileID, name: f.name, crop: $0) } }
+                    result = try await ExportService.shared.uploadDropboxCrops(cropped, to: destination,
+                                                                               adding: copied, progress: update)
                 case .applePhotos:
-                    result = try await ExportService.shared.uploadAssets(items.compactMap(\.asset), to: destination, progress: update)
+                    result = try await ExportService.shared.uploadAssets(items.compactMap(\.asset), crops: crops,
+                                                                         to: destination, progress: update)
                 }
                 Haptics.success()
                 phase = .finished(result, folder: destination)
@@ -98,7 +113,7 @@ struct ExportSheet: View {
                 ProgressView(value: Double(done), total: Double(max(total, 1)))
                     .progressViewStyle(.circular)
                     .controlSize(.large)
-                Text("Saving \(total) photo\(total == 1 ? "" : "s")…")
+                Text("Saving \(total) file\(total == 1 ? "" : "s")…")
                     .font(.rowTitle)
                 Text(folder).font(.smallMetadata).foregroundStyle(Theme.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -106,10 +121,14 @@ struct ExportSheet: View {
                 Image(systemName: "checkmark.circle").font(.largeTitle.weight(.ultraLight))
                 Text("Saved \(result.exported) photo\(result.exported == 1 ? "" : "s")")
                     .font(.title3)
+                if result.crops > 0 {
+                    Text("plus \(result.crops) cropped cop\(result.crops == 1 ? "y" : "ies")")
+                        .font(.metadata).foregroundStyle(Theme.inkSecondary)
+                }
                 Text(folder).font(.smallMetadata).foregroundStyle(Theme.inkSecondary)
                     .multilineTextAlignment(.center)
                 if result.failed > 0 {
-                    Text("\(result.failed) couldn't be saved.").font(.metadata).foregroundStyle(Theme.inkSecondary)
+                    Text("\(result.failed) file\(result.failed == 1 ? "" : "s") couldn't be saved.").font(.metadata).foregroundStyle(Theme.inkSecondary)
                 }
                 doneButton("Done")
             case .failed(let message):

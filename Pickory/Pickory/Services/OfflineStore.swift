@@ -5,7 +5,8 @@ import CryptoKit
 /// Where downloaded Dropbox photos live: Application Support (never Caches,
 /// which iOS can purge), excluded from iCloud backup since Dropbox has them.
 enum OfflineStore {
-    static var directory: URL {
+    /// Created once; checked on every lookup otherwise.
+    static let directory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("DropboxOffline", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {
@@ -16,7 +17,7 @@ enum OfflineStore {
             try? url.setResourceValues(values)
         }
         return dir
-    }
+    }()
 
     /// Stable on-disk name for a Dropbox file ID. File IDs are
     /// case-sensitive but the iOS file system isn't, so the ID is hashed:
@@ -46,6 +47,12 @@ enum OfflineStore {
 
     static func hasLocalCopy(_ fileID: String) -> Bool {
         FileManager.default.fileExists(atPath: localURL(for: fileID).path)
+    }
+
+    /// Names of all downloaded files, for checking many files with one
+    /// directory read instead of one file system call each.
+    static func localFileNames() -> Set<String> {
+        Set((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
     }
 
     /// Removes the app's own downloaded copy. Never touches Dropbox.
