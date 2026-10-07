@@ -43,11 +43,13 @@ struct SoftCrop: Equatable {
     /// The crop in whole pixels for an upright image of `size`, exactly at
     /// the aspect ratio and inside the image.
     func pixelRect(in size: CGSize) -> CGRect {
-        var width = (rect.width * size.width).rounded()
+        // A carousel splits into two halves, so keep its width even.
+        let step: CGFloat = aspect.splitsInTwo ? 2 : 1
+        var width = ((rect.width * size.width) / step).rounded() * step
         var height = (width / aspect.ratio).rounded()
         if height > size.height {
             height = size.height
-            width = (height * aspect.ratio).rounded()
+            width = ((height * aspect.ratio) / step).rounded(.down) * step
         }
         let x = min(max((rect.minX * size.width).rounded(), 0), size.width - width)
         let y = min(max((rect.minY * size.height).rounded(), 0), size.height - height)

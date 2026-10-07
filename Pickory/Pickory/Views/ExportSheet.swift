@@ -4,7 +4,8 @@ import SwiftData
 /// Export the photos shown in the grid into a Dropbox folder. The folder
 /// browser opens at the folder being viewed (Back walks up its parents),
 /// so saving to a nearby or new folder takes a tap or two. Photos with a
-/// soft crop are saved twice: uncropped and cropped.
+/// soft crop are saved twice: uncropped and cropped (an 8:5 carousel crop
+/// also as its two 4:5 posts).
 struct ExportSheet: View {
     let items: [PhotoItem]
     let album: ConnectedAlbum
@@ -65,7 +66,7 @@ struct ExportSheet: View {
 
     private func export(to destination: String) {
         let crops = self.crops
-        let total = items.count + crops.count
+        let total = items.count + crops.values.map(ExportService.cropFileCount).reduce(0, +)
         phase = .exporting(done: 0, total: total, folder: destination)
         Task {
             do {

@@ -39,7 +39,7 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   carousel, dashed line where it splits); drag/pinch the photo inside the frame. On close, a
   changed crop asks to be saved as a **soft crop** — the photo is never modified; the swipe
   card and grid show the cropped part with a crop badge, and exports add a cropped JPEG copy
-  next to the untouched original.
+  next to the untouched original (an 8:5 crop also as its two 4:5 posts).
 
 ### Screen 4 — Grid (review)
 - Album photos with star rating under each thumbnail.

@@ -11,7 +11,8 @@ import SwiftyDropbox
 /// Dropbox's automatic " (1)" renaming.
 ///
 /// Photos with a soft crop get a second file, the cropped version
-/// ("IMG_0001 (4x5 crop).jpg"), next to the uncropped original.
+/// ("IMG_0001 (4x5 crop).jpg"), next to the uncropped original. An 8:5
+/// carousel crop also gets its two 4:5 posts ("… (8x5 crop, 1 of 2).jpg").
 @MainActor
 final class ExportService {
     static let shared = ExportService()
@@ -143,20 +144,28 @@ final class ExportService {
                     try await uploadCrop(of: data, name: name, crop: crop, to: folder, result: &result)
                 }
             } else {
-                result.failed += crop == nil ? 1 : 2
+                result.failed += 1 + (crop.map(Self.cropFileCount) ?? 0)
             }
             progress(result.filesDone)
         }
         return result
     }
 
+    /// Cropped files per soft crop: the crop, plus its two halves for a carousel.
+    nonisolated static func cropFileCount(_ crop: SoftCrop) -> Int { crop.aspect.splitsInTwo ? 3 : 1 }
+
     private func uploadCrop(of original: Data?, name: String, crop: SoftCrop, to folder: String,
                             result: inout Result) async throws {
-        if let original, let data = await Self.croppedJPEG(original, crop: crop),
-           try await upload(data, as: Self.croppedName(name, crop), to: folder) {
-            result.crops += 1
-        } else {
-            result.failed += 1
+        guard let original else { result.failed += Self.cropFileCount(crop); return }
+        let parts = await Self.croppedJPEGs(original, crop: crop)
+        for (index, data) in parts.enumerated() {
+            // Index 0 is the whole crop; 1 and 2 are a carousel's posts.
+            let part = index > 0 ? (index, parts.count - 1) : nil
+            if let data, try await upload(data, as: Self.croppedName(name, crop, part: part), to: folder) {
+                result.crops += 1
+            } else {
+                result.failed += 1
+            }
         }
     }
 
@@ -175,29 +184,40 @@ final class ExportService {
 
     // MARK: Cropping
 
-    /// "IMG_0001.HEIC" → "IMG_0001 (4x5 crop).jpg"
-    static func croppedName(_ name: String, _ crop: SoftCrop) -> String {
+    /// "IMG_0001.HEIC" → "IMG_0001 (4x5 crop).jpg", or with
+    /// `part: (1, 2)` → "IMG_0001 (8x5 crop, 1 of 2).jpg".
+    static func croppedName(_ name: String, _ crop: SoftCrop, part: (Int, Int)? = nil) -> String {
         let stem = (name as NSString).deletingPathExtension
-        return "\(stem.isEmpty ? name : stem) (\(crop.aspect.fileLabel) crop).jpg"
+        let suffix = part.map { ", \($0.0) of \($0.1)" } ?? ""
+        return "\(stem.isEmpty ? name : stem) (\(crop.aspect.fileLabel) crop\(suffix)).jpg"
     }
 
-    /// The upright photo at full resolution, cut to the soft crop, as a JPEG.
-    /// Keeps the original's metadata except its orientation (already applied).
-    nonisolated static func croppedJPEG(_ data: Data, crop: SoftCrop) async -> Data? {
-        await Task.detached(priority: .userInitiated) {
+    /// The upright photo at full resolution, cut to the soft crop, as JPEGs:
+    /// the crop, then for a carousel its left and right halves. Keeps the
+    /// original's metadata except its orientation (already applied).
+    /// Nil for a piece that couldn't be made.
+    nonisolated static func croppedJPEGs(_ data: Data, crop: SoftCrop) async -> [Data?] {
+        let pieces = cropFileCount(crop)
+        return await Task.detached(priority: .userInitiated) { () -> [Data?] in
             guard let source = CGImageSourceCreateWithData(data as CFData, nil),
                   let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
                   let width = props[kCGImagePropertyPixelWidth] as? Int,
                   let height = props[kCGImagePropertyPixelHeight] as? Int
-            else { return nil }
+            else { return Array(repeating: nil, count: pieces) }
             let upright = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: max(width, height),
             ] as CFDictionary)
-            guard let upright else { return nil }
+            guard let upright else { return Array(repeating: nil, count: pieces) }
             let size = CGSize(width: upright.width, height: upright.height)
-            guard let cropped = upright.cropping(to: crop.pixelRect(in: size)) else { return nil }
+            let rect = crop.pixelRect(in: size)
+            var rects = [rect]
+            if crop.aspect.splitsInTwo {
+                let half = rect.width / 2
+                rects.append(CGRect(x: rect.minX, y: rect.minY, width: half, height: rect.height))
+                rects.append(CGRect(x: rect.minX + half, y: rect.minY, width: half, height: rect.height))
+            }
 
             var metadata = props
             metadata[kCGImagePropertyOrientation] = 1
@@ -209,11 +229,14 @@ final class ExportService {
             }
             metadata[kCGImageDestinationLossyCompressionQuality] = 0.92
 
-            let out = NSMutableData()
-            guard let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)
-            else { return nil }
-            CGImageDestinationAddImage(dest, cropped, metadata as CFDictionary)
-            return CGImageDestinationFinalize(dest) ? out as Data : nil
+            return rects.map { piece -> Data? in
+                guard let cropped = upright.cropping(to: piece) else { return nil }
+                let out = NSMutableData()
+                guard let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)
+                else { return nil }
+                CGImageDestinationAddImage(dest, cropped, metadata as CFDictionary)
+                return CGImageDestinationFinalize(dest) ? out as Data : nil
+            }
         }.value
     }
 
