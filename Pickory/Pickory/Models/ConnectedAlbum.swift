@@ -12,6 +12,9 @@ final class ConnectedAlbum {
     var externalID: String
     /// Name at connection time; refreshed from the source when available.
     var name: String
+    /// Name the user gave the album inside this app (nil = the source's name).
+    /// Never written back to Apple Photos or Dropbox.
+    var customName: String?
     var dateAdded: Date
     /// The photo the swipe deck was left on, so reopening resumes there.
     var lastPhotoID: String?
@@ -47,6 +50,9 @@ final class ConnectedAlbum {
     }
 
     var source: PhotoSourceKind { PhotoSourceKind(rawValue: sourceRaw) ?? .applePhotos }
+
+    /// What the app shows: the user's name for the album, else the source's.
+    var displayName: String { customName ?? name }
 
     var offlineState: OfflineState {
         get { OfflineState(rawValue: offlineStateRaw) ?? .onlineOnly }
