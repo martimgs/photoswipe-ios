@@ -60,6 +60,7 @@ final class OfflineDownloadManager: ObservableObject {
                 }
             }
             try? context?.save()
+            indexes = [:]
             ImageLoader.shared.forgetAll()
         }
         // Downloads left unfinished by a previous run resume once requests
@@ -96,30 +97,127 @@ final class OfflineDownloadManager: ObservableObject {
     }
 
     /// State of an album or one of its folders (`folder` nil = whole album).
-    /// Downloaded = `DropboxFile.localFileName` is set (no disk access here).
+    /// Downloaded = `DropboxFile.localFileName` is set. Read from the
+    /// in-memory index: every status icon asks on each refresh, so this
+    /// must not fetch or touch the disk.
     func status(of album: ConnectedAlbum, folder: String? = nil, pending: Int) -> Status {
         _ = revision
         let wanted = Set(album.offlineFolders)
-        let scope = files(of: album).filter { FolderScope.contains(folder, folder: $0.folderPath) }
-        let inList = scope.filter { wanted.contains($0.folderPath) }
-        let missing = inList.filter { $0.localFileName == nil }.count
-        if missing > 0 {
-            let p = Progress(done: inList.count - missing, total: inList.count, failed: 0)
+        var scope = 0, inList = 0, done = 0
+        for (path, count) in index(of: album).counts where FolderScope.contains(folder, folder: path) {
+            scope += count.total
+            if wanted.contains(path) {
+                inList += count.total
+                done += count.local
+            }
+        }
+        if done < inList {
+            let p = Progress(done: done, total: inList, failed: 0)
             return album.downloadPaused ? .paused(p) : .downloading(p)
         }
         if pending > 0 { return .pending(pending) }
-        if !scope.isEmpty && inList.count == scope.count { return .offline }
+        if scope > 0 && inList == scope { return .offline }
         return .onlineOnly
     }
 
     /// File IDs in an album or folder (for per-scope unsynced counts).
     func fileIDs(of album: ConnectedAlbum, folder: String?) -> [String] {
-        files(of: album).filter { FolderScope.contains(folder, folder: $0.folderPath) }.map(\.fileID)
+        index(of: album).idsByFolder.flatMap { FolderScope.contains(folder, folder: $0) ? $1 : [] }
     }
 
     /// Folder paths that exist (contain photos) in an album or folder.
     private func folderPaths(of album: ConnectedAlbum, under folder: String?) -> Set<String> {
-        Set(files(of: album).map(\.folderPath).filter { FolderScope.contains(folder, folder: $0) })
+        Set(index(of: album).counts.keys.filter { FolderScope.contains(folder, folder: $0) })
+    }
+
+    // MARK: Index
+
+    /// Per-album summary of its `DropboxFile` records, kept in memory and
+    /// updated as downloads finish.
+    private struct Index {
+        struct Count { var total = 0, local = 0 }
+        var folderOf: [String: String] = [:]   // file ID -> folder path
+        var local: Set<String> = []            // downloaded file IDs
+        var counts: [String: Count] = [:]      // folder path -> files
+        var idsByFolder: [String: [String]] = [:]
+
+        mutating func markLocal(_ fileID: String) {
+            guard let folder = folderOf[fileID], local.insert(fileID).inserted else { return }
+            counts[folder, default: Count()].local += 1
+        }
+    }
+
+    private var indexes: [String: Index] = [:]
+
+    private func index(of album: ConnectedAlbum) -> Index {
+        if let index = indexes[album.externalID] { return index }
+        var index = Index()
+        for file in files(of: album) {
+            index.folderOf[file.fileID] = file.folderPath
+            index.idsByFolder[file.folderPath, default: []].append(file.fileID)
+            index.counts[file.folderPath, default: Index.Count()].total += 1
+            if file.localFileName != nil || unsaved[file.fileID] != nil {
+                index.local.insert(file.fileID)
+                index.counts[file.folderPath, default: Index.Count()].local += 1
+            }
+        }
+        indexes[album.externalID] = index
+        return index
+    }
+
+    /// An album's file records changed outside this class (check for
+    /// changes, disconnect): rebuild its index on next use.
+    func filesChanged(albumID: String) {
+        indexes[albumID] = nil
+        revision += 1
+    }
+
+    // MARK: Batching
+
+    /// Downloads finished since the last save, recorded on their
+    /// `DropboxFile`s in one go. Saving after every file blocked the main
+    /// thread and made every list showing albums reload.
+    private var unsaved: [String: DownloadQuality] = [:]
+    private var saveScheduled = false
+    private var refreshScheduled = false
+
+    private func scheduleSave() {
+        guard !saveScheduled else { return }
+        saveScheduled = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            saveDownloaded()
+        }
+    }
+
+    private func saveDownloaded() {
+        saveScheduled = false
+        guard let context, !unsaved.isEmpty else { return }
+        let batch = unsaved
+        unsaved = [:]
+        let ids = Array(batch.keys)
+        let records = (try? context.fetch(FetchDescriptor<DropboxFile>(
+            predicate: #Predicate { ids.contains($0.fileID) }))) ?? []
+        for file in records where file.localFileName == nil {
+            // Removed again before this save (online only).
+            let url = OfflineStore.localURL(for: file.fileID)
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path) else { continue }
+            file.localFileName = url.lastPathComponent
+            file.localQualityRaw = batch[file.fileID]?.rawValue
+            file.localSize = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        try? context.save()
+    }
+
+    /// Status icons refresh a few times a second at most while downloading.
+    private func scheduleRefresh() {
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            refreshScheduled = false
+            revision += 1
+        }
     }
 
     // MARK: Actions
@@ -156,6 +254,7 @@ final class OfflineDownloadManager: ObservableObject {
     /// files are never touched and ratings are kept. Callers must make sure
     /// no changes are pending first.
     func removeDownloads(_ album: ConnectedAlbum, folder: String? = nil) {
+        saveDownloaded()
         let remove = folderPaths(of: album, under: folder)
         album.offlineFolders = album.offlineFolders.filter { !remove.contains($0) }
         if folder == nil { album.offlineFolders = [] }
@@ -174,6 +273,7 @@ final class OfflineDownloadManager: ObservableObject {
             album.downloadPaused = false
         }
         try? context?.save()
+        indexes[album.externalID] = nil
         revision += 1
         ImageLoader.shared.forgetAll()
     }
@@ -200,6 +300,8 @@ final class OfflineDownloadManager: ObservableObject {
     /// run at once (Dropbox rate-limits bursts of thumbnail requests).
     private var waiting: [String: [String]] = [:]
     private var attempts: [String: Int] = [:]
+    /// Failed files waiting to be queued again.
+    private var retrying: [String: Int] = [:]
     private static let maxConcurrent = 6
     private static let maxAttempts = 3
 
@@ -212,11 +314,16 @@ final class OfflineDownloadManager: ObservableObject {
         let order = AlbumSessionViewModel.dropboxItems(albumID: albumID, context: context!).map(\.id)
         let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
         let candidates = files(of: album).filter { wanted.contains($0.folderPath) }
+        let onDisk = OfflineStore.localFileNames()
         // A file can already be on disk via another album: just record it.
-        for file in candidates where file.localFileName == nil && OfflineStore.hasLocalCopy(file.fileID) {
-            file.localFileName = OfflineStore.fileName(for: file.fileID)
+        for file in candidates where file.localFileName == nil {
+            let name = OfflineStore.fileName(for: file.fileID)
+            if onDisk.contains(name) {
+                file.localFileName = name
+                indexes[albumID]?.markLocal(file.fileID)
+            }
         }
-        let missing = candidates.filter { !OfflineStore.hasLocalCopy($0.fileID) }
+        let missing = candidates.filter { !onDisk.contains(OfflineStore.fileName(for: $0.fileID)) }
             .sorted { (rank[$0.fileID] ?? .max) < (rank[$1.fileID] ?? .max) }
         revision += 1
         guard DropboxClientsManager.authorizedBackgroundClient != nil else {
@@ -278,7 +385,8 @@ final class OfflineDownloadManager: ObservableObject {
             request.response { [weak self] _, error in
                 Task { @MainActor in
                     self?.completed(fileID: fileID, albumID: albumID, quality: .optimized,
-                                    temp: temp, error: error.map { "\($0)" }, thumbnailFailed: error != nil)
+                                    temp: temp, error: error.map { "\($0)" },
+                                    thumbnailFailed: error.map(ThumbnailCache.isUnrenderable) ?? false)
                 }
             }
         case .originals:
@@ -316,17 +424,12 @@ final class OfflineDownloadManager: ObservableObject {
         if OfflineStore.hasLocalCopy(fileID) {
             if error == nil { Connectivity.shared.markReachable() }
             // Success — or a duplicate request for a file another one saved.
-            // Mark it downloaded in every album that contains it.
-            let attrs = try? FileManager.default.attributesOfItem(atPath: final.path)
-            let records = (try? context?.fetch(FetchDescriptor<DropboxFile>(
-                predicate: #Predicate { $0.fileID == fileID }))) ?? []
-            for file in records where file.localFileName == nil {
-                file.localFileName = OfflineStore.fileName(for: fileID)
-                file.localQualityRaw = quality.rawValue
-                file.localSize = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            }
-            try? context?.save()
-            revision += 1
+            // Mark it downloaded in every album that contains it (saved in
+            // batches; the indexes show it right away).
+            if unsaved[fileID] == nil { unsaved[fileID] = quality }
+            for id in indexes.keys { indexes[id]?.markLocal(fileID) }
+            scheduleSave()
+            scheduleRefresh()
         } else if isActive(albumID), let error {
             log.error("Download failed \(fileID, privacy: .public): \(error, privacy: .public)")
             attempts[fileID, default: 0] += 1
@@ -337,7 +440,17 @@ final class OfflineDownloadManager: ObservableObject {
                 return
             }
             if attempts[fileID, default: 0] < Self.maxAttempts {
-                waiting[albumID, default: []].append(fileID)
+                // Usually a rate limit: retry after a pause, not straight away.
+                let delay = Double(attempts[fileID, default: 0]) * 5
+                retrying[albumID, default: 0] += 1
+                Task {
+                    try? await Task.sleep(for: .seconds(delay))
+                    retrying[albumID, default: 1] -= 1
+                    if isActive(albumID) { waiting[albumID, default: []].append(fileID) }
+                    pump()
+                    if let album = self.album(albumID) { finishIfComplete(album) }
+                }
+                return
             }
         }
         finishIfComplete(album)
@@ -347,13 +460,15 @@ final class OfflineDownloadManager: ObservableObject {
     /// pause so a tap retries just those files.
     private func finishIfComplete(_ album: ConnectedAlbum) {
         let albumID = album.externalID
-        guard !album.downloadPaused,
+        guard !album.downloadPaused, (retrying[albumID] ?? 0) == 0,
               outstanding[albumID]?.isEmpty ?? true,
               waiting[albumID]?.isEmpty ?? true else { return }
         let wanted = Set(album.offlineFolders)
+        let onDisk = OfflineStore.localFileNames()
         let allLocal = files(of: album).filter { wanted.contains($0.folderPath) }
-            .allSatisfy { OfflineStore.hasLocalCopy($0.fileID) }
+            .allSatisfy { onDisk.contains(OfflineStore.fileName(for: $0.fileID)) }
         if !allLocal { album.downloadPaused = true }
+        saveDownloaded()
         try? context?.save()
         revision += 1
     }
@@ -434,7 +549,11 @@ final class OfflineDownloadManager: ObservableObject {
     }
 
     private func album(_ albumID: String) -> ConnectedAlbum? {
-        albums().first { $0.externalID == albumID }
+        let raw = PhotoSourceKind.dropbox.rawValue
+        var descriptor = FetchDescriptor<ConnectedAlbum>(
+            predicate: #Predicate { $0.sourceRaw == raw && $0.externalID == albumID })
+        descriptor.fetchLimit = 1
+        return (try? context?.fetch(descriptor))?.first
     }
 
     private func files(of album: ConnectedAlbum) -> [DropboxFile] {

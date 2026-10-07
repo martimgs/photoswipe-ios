@@ -60,10 +60,12 @@ struct SwipeDeckView: View {
         var requests: [ImageLoader.Request] = []
         for distance in 0...40 {
             for i in Set([idx - distance, idx + distance]).sorted() where d.indices.contains(i) {
-                if !scrubbing, cardPixelSide > 0, distance <= 5 {
+                if !scrubbing, cardPixelSide > 0, distance <= 3 {
                     requests.append(.init(item: d[i], pixelSize: full, fill: false))
                 }
-                requests.append(.init(item: d[i], pixelSize: ImageLoader.previewSize, fill: false))
+                if distance <= 20 {
+                    requests.append(.init(item: d[i], pixelSize: ImageLoader.previewSize, fill: false))
+                }
                 requests.append(.init(item: d[i], pixelSize: thumb, fill: true))
             }
         }
