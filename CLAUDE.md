@@ -21,6 +21,8 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
     Recents, smart albums, or shared iCloud albums.
   - **Dropbox** — shown, marked "Coming soon". Dropbox is the planned second source.
 - Connections persist between launches. Swipe a row to disconnect — never touches the photos.
+- Swipe right (or long-press) a row to **Rename** it: the name lives only in the app
+  (`ConnectedAlbum.customName`), never written to Photos/Dropbox; empty resets to the source name.
 
 ### Screen 2/3 — Swipe (rating)
 - Header: back, album name, "12 of 842" counter, Undo, "…" menu (min-rating filter, open grid).

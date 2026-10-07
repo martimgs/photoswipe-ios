@@ -22,7 +22,7 @@ final class AlbumSessionViewModel: ObservableObject {
 
     /// Header title: the subfolder's name, or the album's.
     var title: String {
-        guard let folder, let last = folder.split(separator: "/").last else { return album.name }
+        guard let folder, let last = folder.split(separator: "/").last else { return album.displayName }
         return String(last)
     }
 

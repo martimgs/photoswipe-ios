@@ -4,7 +4,8 @@ import Photos
 
 /// Landing screen: a fixed logo header over the albums the user has connected, plus a
 /// "Connect Album" row. Swiping a row away disconnects it — the photos
-/// themselves are never touched.
+/// themselves are never touched. Renaming an album only changes its name in
+/// this app, never at the source.
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ConnectedAlbum.dateAdded) private var albums: [ConnectedAlbum]
@@ -15,6 +16,8 @@ struct LibraryView: View {
     /// Expanded albums ("albumID") and subfolders ("albumID|path").
     @State private var expanded: Set<String> = []
     @State private var summaries = DropboxSummaryCache()
+    @State private var renaming: ConnectedAlbum?
+    @State private var newName = ""
 
     var body: some View {
         NavigationStack {
@@ -31,6 +34,15 @@ struct LibraryView: View {
                     .navigationLinkIndicatorVisibility(.hidden)
                     .swipeActions(edge: .trailing) {
                         Button("Disconnect", role: .destructive) { disconnect(album) }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button("Rename") { startRenaming(album) }
+                    }
+                    .contextMenu {
+                        Button("Rename", systemImage: "pencil") { startRenaming(album) }
+                        Button("Disconnect", systemImage: "minus.circle", role: .destructive) {
+                            disconnect(album)
+                        }
                     }
                     if expanded.contains(album.externalID) {
                         ForEach(flatten(folders, album: album), id: \.node.id) { entry in
@@ -80,6 +92,15 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .alert("Rename Album", isPresented: Binding(
+                get: { renaming != nil }, set: { if !$0 { renaming = nil } }
+            ), presenting: renaming) { album in
+                TextField(album.name, text: $newName)
+                Button("Cancel", role: .cancel) {}
+                Button("Rename") { rename(album) }
+            } message: { album in
+                Text("Only changes the name in Pickory. Leave empty to use “\(album.name)”.")
             }
         }
         .tint(Theme.ink)
@@ -179,6 +200,20 @@ struct LibraryView: View {
         }
     }
 
+    // MARK: Renaming
+
+    private func startRenaming(_ album: ConnectedAlbum) {
+        newName = album.customName ?? ""
+        renaming = album
+    }
+
+    /// Stores the name in the app only; empty (or the source's name) clears it.
+    private func rename(_ album: ConnectedAlbum) {
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        album.customName = name.isEmpty || name == album.name ? nil : name
+        try? context.save()
+    }
+
     /// Removes the connection only. For Dropbox albums the app's own
     /// downloaded copies are deleted; files in Dropbox are never touched.
     /// Ratings and any pending tag syncs are kept.
@@ -246,7 +281,7 @@ struct AlbumRow: View {
                 }
             }
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(info?.name ?? album.name)
+                Text(album.customName ?? info?.name ?? album.name)
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
