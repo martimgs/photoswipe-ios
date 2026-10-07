@@ -42,7 +42,10 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   next to the untouched original (an 8:5 crop also as its two 4:5 posts).
 
 ### Screen 4 — Grid (review)
-- Album photos with star rating under each thumbnail.
+- Instagram profile-style grid: 3 columns of 3:4 tiles, 1 pt lines between, edge to edge,
+  no spacing. Labels sit on the photo in white like the Photos app: "2★" top left, soft crop
+  (crop icon + "4:5") top right. A cropped tile shows the crop (an 8:5 carousel's first post)
+  trimmed to 3:4.
 - Subtitle shows the active filter, e.g. "84 selected • 4+ stars".
 - Tabs: **All**, **Selected** (filtered by min rating), **Rejected** (mockup says "Trash" — use
   "Rejected"). Un-reject from the Rejected tab.

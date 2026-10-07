@@ -1,22 +1,35 @@
 import SwiftUI
 
-/// The soft-cropped part of an uncropped image, filling a frame of the
-/// crop's aspect ratio. The image itself is never cut.
+/// Part of an uncropped image (a normalized rect), filling a frame of the
+/// same aspect ratio. The image itself is never cut.
 struct CroppedImage: View {
     let image: UIImage
-    let crop: SoftCrop
+    let rect: CGRect
+    /// Dashed line down the middle (two-post carousel).
+    var showsSplit = false
+
+    /// The soft-cropped part, with the carousel line when it applies.
+    init(image: UIImage, crop: SoftCrop) {
+        self.init(image: image, rect: crop.rect, showsSplit: crop.aspect.splitsInTwo)
+    }
+
+    init(image: UIImage, rect: CGRect, showsSplit: Bool = false) {
+        self.image = image
+        self.rect = rect
+        self.showsSplit = showsSplit
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let width = geo.size.width / crop.rect.width
-            let height = geo.size.height / crop.rect.height
+            let width = geo.size.width / rect.width
+            let height = geo.size.height / rect.height
             Image(uiImage: image)
                 .resizable()
                 .frame(width: width, height: height)
-                .offset(x: -crop.rect.minX * width, y: -crop.rect.minY * height)
+                .offset(x: -rect.minX * width, y: -rect.minY * height)
         }
         .clipped()
-        .overlay { if crop.aspect.splitsInTwo { CarouselSplitLine() } }
+        .overlay { if showsSplit { CarouselSplitLine() } }
     }
 }
 

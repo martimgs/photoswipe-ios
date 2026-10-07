@@ -76,23 +76,21 @@ struct RatingGridView: View {
 
     var body: some View {
         GeometryReader { geo in
-            // 2 columns on iPhone; more on wider screens (~220 pt each).
-            let gap = Spacing.xs
-            let inner = geo.size.width - 2 * Spacing.margin
-            let columns = max(2, Int((inner + gap) / (220 + gap)))
-            let side = (inner - gap * CGFloat(columns - 1)) / CGFloat(columns)
+            // Instagram profile grid: 3 columns of 3:4 tiles split by thin
+            // lines, edge to edge. More columns on wide iPad windows.
+            let gap: CGFloat = 1
+            let columns = max(3, Int((geo.size.width + gap) / (260 + gap)))
+            let width = (geo.size.width - gap * CGFloat(columns - 1)) / CGFloat(columns)
             ScrollView {
                 if items.isEmpty {
                     emptyState.frame(width: geo.size.width, height: geo.size.height * 0.8)
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: gap), count: columns),
-                              spacing: Spacing.m) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(width), spacing: gap), count: columns),
+                              spacing: gap) {
                         ForEach(items) { asset in
-                            cell(asset, side: side)
+                            cell(asset, width: width)
                         }
                     }
-                    .padding(.horizontal, Spacing.margin)
-                    .padding(.vertical, Spacing.xs)
                 }
             }
         }
@@ -165,49 +163,49 @@ struct RatingGridView: View {
 
     // MARK: Cells
 
-    private func cell(_ asset: PhotoItem, side: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Button {
-                guard tab != .rejected else { return }
-                vm.jump(to: asset)
-                dismiss()
-            } label: {
-                Thumbnail(item: asset, side: side, crop: vm.crop(of: asset))
-                    .opacity(tab == .rejected ? 0.55 : 1)
-                    .overlay(alignment: .topTrailing) { photoStatus(asset) }
-            }
-            .buttonStyle(.plain)
-            .disabled(tab == .rejected)
-            .accessibilityLabel(tab == .rejected ? "Rejected photo" : "Open in swipe view")
-
-            if tab == .rejected {
-                Button {
-                    Haptics.tap()
-                    withAnimation(.snappy) { vm.unreject(asset) }
-                } label: {
-                    Label("Restore", systemImage: "arrow.uturn.backward")
-                        .font(.smallMetadata)
-                        .foregroundStyle(Theme.ink)
+    private func cell(_ asset: PhotoItem, width: CGFloat) -> some View {
+        let rating = vm.rating(of: asset)
+        let crop = vm.crop(of: asset)
+        let rejected = tab == .rejected
+        return Button {
+            guard !rejected else { return }
+            vm.jump(to: asset)
+            dismiss()
+        } label: {
+            GridPhotoCell(item: asset, width: width, rating: rating, crop: crop, dimmed: rejected,
+                          unsynced: asset.source == .dropbox
+                              && sync.isUnsynced(fileID: asset.id, isOnline: connectivity.isOnline))
+                .overlay(alignment: .bottomLeading) {
+                    if rejected {
+                        Button { restore(asset) } label: {
+                            GridLabel(text: "Restore", symbol: "arrow.uturn.backward")
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
-            } else {
-                RatingControl(rating: vm.rating(of: asset), size: .compact)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if rejected {
+                Button("Restore", systemImage: "arrow.uturn.backward") { restore(asset) }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(cellLabel(rating: rating, crop: crop, rejected: rejected))
+        .accessibilityHint(rejected ? "" : "Opens in swipe view")
+        .accessibilityAction(named: "Restore") { if rejected { restore(asset) } }
     }
 
-    /// Marks only photos whose rating change hasn't synced to Dropbox
-    /// (offline, or a failed attempt). Download state is shown per album.
-    @ViewBuilder
-    private func photoStatus(_ item: PhotoItem) -> some View {
-        if item.source == .dropbox, sync.isUnsynced(fileID: item.id, isOnline: connectivity.isOnline) {
-            Image(systemName: "arrow.up.circle.fill")
-                .font(.body)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(Theme.paper, Theme.ink.opacity(0.75))
-                .padding(6)
-                .accessibilityLabel("Rating not synced yet")
-        }
+    private func restore(_ item: PhotoItem) {
+        Haptics.tap()
+        withAnimation(.snappy) { vm.unreject(item) }
+    }
+
+    private func cellLabel(rating: Int, crop: SoftCrop?, rejected: Bool) -> String {
+        var parts = [rejected ? "Rejected photo" : "Photo"]
+        parts.append(rating == 0 ? "no stars" : rating == 1 ? "1 star" : "\(rating) stars")
+        if let crop { parts.append("cropped \(crop.aspect.rawValue)") }
+        return parts.joined(separator: ", ")
     }
 
     private var emptyState: some View {

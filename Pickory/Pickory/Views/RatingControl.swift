@@ -7,7 +7,7 @@ import SwiftUI
 struct RatingControl: View {
     /// `.header` sits in the navigation bar (landscape review), so it is
     /// capped to fit the compact bar at large Dynamic Type sizes.
-    enum Size { case regular, header, compact }
+    enum Size { case regular, header }
 
     let rating: Int
     var size: Size = .regular
@@ -15,13 +15,11 @@ struct RatingControl: View {
 
     @ScaledMetric(relativeTo: .title3) private var regularStar: CGFloat = 23
     @ScaledMetric(relativeTo: .body) private var headerStar: CGFloat = 21
-    @ScaledMetric(relativeTo: .footnote) private var compactStar: CGFloat = 14
 
     private var star: CGFloat {
         switch size {
         case .regular: regularStar
         case .header: min(headerStar, 24)
-        case .compact: compactStar
         }
     }
 
@@ -29,7 +27,6 @@ struct RatingControl: View {
         switch size {
         case .regular: star * 0.48
         case .header: star * 0.32
-        case .compact: star * 0.22
         }
     }
 
