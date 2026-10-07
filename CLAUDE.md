@@ -34,6 +34,12 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   Restore from the Rejected tab leaves it at 0).
   VoiceOver gets Pick / Reject as actions on the card.
 - While dragging, an overlay on the card shows the change (e.g. a large star).
+- Tap the card = full screen (zoom/pan). Bottom bar: exposure −1 / +1 EV (preview only,
+  never saved) and sticky Instagram crop buttons 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post
+  carousel, dashed line where it splits); drag/pinch the photo inside the frame. On close, a
+  changed crop asks to be saved as a **soft crop** — the photo is never modified; the swipe
+  card and grid show the cropped part with a crop badge, and exports add a cropped JPEG copy
+  next to the untouched original.
 
 ### Screen 4 — Grid (review)
 - Album photos with star rating under each thumbnail.
@@ -57,6 +63,7 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   ```
   `PHAsset` is an immutable snapshot — track written ratings locally, and serialize writes per
   asset so an undo can't race the write it undoes.
+- **Soft crops** (aspect + normalized rect in the upright photo) live on `PhotoState`.
 - **Rejected status and connected albums** live in SwiftData, keyed by (source, photo/album
   identifier), so Dropbox photos can reuse the same model later.
 - Deployment target: **iOS 27.0**.

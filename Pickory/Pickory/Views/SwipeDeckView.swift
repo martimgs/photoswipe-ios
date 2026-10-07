@@ -43,7 +43,7 @@ struct SwipeDeckView: View {
         .background(Theme.paper.ignoresSafeArea())
         .navigationSubtitle(isLandscape ? "" : subtitle)
         .toolbar { toolbarContent }
-        .fullScreenCover(item: $fullScreen) { FullScreenPhotoView(item: $0) }
+        .fullScreenCover(item: $fullScreen, onDismiss: vm.reloadCrops) { FullScreenPhotoView(item: $0) }
         .onPreferenceChange(CardSizeKey.self) { side in
             if side > 0 { cardPixelSide = side * displayScale }
         }
@@ -199,7 +199,7 @@ struct SwipeDeckView: View {
         return ZStack {
             ForEach(base) { item in
                 let isCurrent = item.id == current.id
-                PhotoCardView(item: item,
+                PhotoCardView(item: item, crop: vm.crop(of: item),
                               intent: isCurrent ? intent : nil,
                               intentStrength: isCurrent ? strength : 0)
                     .modifier(DeckCardStyle(role: isCurrent ? .current : .next,
@@ -210,7 +210,7 @@ struct SwipeDeckView: View {
                     .transition(.identity)
             }
             ForEach(flying) { f in
-                PhotoCardView(item: f.item, intent: f.intent, intentStrength: 1)
+                PhotoCardView(item: f.item, crop: vm.crop(of: f.item), intent: f.intent, intentStrength: 1)
                     .modifier(DeckCardStyle(role: .current, drag: f.offset, progress: 1))
                     .zIndex(2)
                     .allowsHitTesting(false)

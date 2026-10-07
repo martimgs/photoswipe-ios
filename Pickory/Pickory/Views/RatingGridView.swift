@@ -172,7 +172,7 @@ struct RatingGridView: View {
                 vm.jump(to: asset)
                 dismiss()
             } label: {
-                Thumbnail(item: asset, side: side)
+                Thumbnail(item: asset, side: side, crop: vm.crop(of: asset))
                     .opacity(tab == .rejected ? 0.55 : 1)
                     .overlay(alignment: .topTrailing) { photoStatus(asset) }
             }

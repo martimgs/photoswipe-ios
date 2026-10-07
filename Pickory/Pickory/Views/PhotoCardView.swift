@@ -27,9 +27,11 @@ enum SwipeIntent: Equatable {
 /// white overlay whose opacity follows the drag.
 ///
 /// The card takes the photo's own shape and fits inside the space it's
-/// given, so portrait and landscape photos are always shown whole.
+/// given, so portrait and landscape photos are always shown whole. A photo
+/// with a soft crop shows just the cropped part, marked with a badge.
 struct PhotoCardView: View {
     let item: PhotoItem
+    var crop: SoftCrop? = nil
     var intent: SwipeIntent? = nil
     var intentStrength: Double = 0
 
@@ -39,6 +41,7 @@ struct PhotoCardView: View {
     /// Width / height of the photo. PhotoKit knows it up front; Dropbox
     /// photos use a placeholder until the image arrives.
     private func aspect(of shown: UIImage?) -> CGFloat {
+        if let crop { return crop.aspect.ratio }
         if let asset = item.asset, asset.pixelHeight > 0 {
             return CGFloat(asset.pixelWidth) / CGFloat(asset.pixelHeight)
         }
@@ -55,7 +58,9 @@ struct PhotoCardView: View {
             let fitted = Self.fit(aspect: ratio, in: geo.size)
             ZStack {
                 Theme.surface
-                if let shown {
+                if let shown, let crop {
+                    CroppedImage(image: shown, crop: crop)
+                } else if let shown {
                     Image(uiImage: shown)
                         .resizable()
                         .scaledToFit()
@@ -66,16 +71,25 @@ struct PhotoCardView: View {
                     overlay(intent)
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if let crop, intent == nil { CropBadge(aspect: crop.aspect) }
+            }
             .frame(width: fitted.width, height: fitted.height)
             .clipShape(RoundedRectangle(cornerRadius: Radius.photo, style: .continuous))
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(.easeOut(duration: 0.2), value: ratio)
-            .task(id: item.id) { await loadImage(fitting: geo.size) }
+            .task(id: LoadKey(id: item.id, crop: crop)) { await loadImage(fitting: geo.size) }
         }
         .accessibilityElement()
         .accessibilityLabel(item.date.map {
             "Photo from \($0.formatted(date: .abbreviated, time: .omitted))"
         } ?? "Photo")
+    }
+
+    /// Reload when a crop is saved: it may need a sharper image.
+    private struct LoadKey: Equatable {
+        let id: String
+        let crop: SoftCrop?
     }
 
     private func overlay(_ intent: SwipeIntent) -> some View {
@@ -105,9 +119,11 @@ struct PhotoCardView: View {
     }
 
     /// Request enough pixels to fill the available space whichever way
-    /// the photo is oriented, uncropped.
+    /// the photo is oriented, uncropped. A soft crop shows only part of
+    /// the image, so it gets proportionally more (up to 3x).
     private func pixelSize(fitting cardSize: CGSize) -> CGSize {
-        let side = max(cardSize.width, cardSize.height) * displayScale
+        let zoom = crop.map { min(1 / max(min($0.rect.width, $0.rect.height), 0.01), 3) } ?? 1
+        let side = (max(cardSize.width, cardSize.height) * displayScale * zoom).rounded()
         return CGSize(width: side, height: side)
     }
 
