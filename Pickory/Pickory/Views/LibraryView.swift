@@ -289,16 +289,22 @@ struct AlbumRow: View {
                 Text(subtitle(info))
                     .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
+                    .lineLimit(1)
                 if folderCount > 0 {
                     FolderToggle(count: folderCount, isExpanded: isExpanded, action: onToggleFolders)
                 }
             }
-            Spacer(minLength: Spacing.xs)
-            if album.source == .dropbox {
-                // Album-level offline/sync control.
-                AlbumStatusButton(album: album)
+            // The text column takes all the width the trailing controls don't need.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            HStack(spacing: Spacing.xxs) {
+                if album.source == .dropbox {
+                    // Album-level offline/sync control.
+                    AlbumStatusButton(album: album)
+                }
+                RowChevron()
             }
-            RowChevron()
+            .fixedSize()
         }
         // Re-read after each Dropbox "check for changes".
         .task(id: "\(album.externalID)|\(album.lastCheckedAt?.timeIntervalSince1970 ?? 0)") {
@@ -397,15 +403,20 @@ struct FolderRow: View {
                 Text(node.count == 1 ? "1 photo" : "\(node.count.formatted()) photos")
                     .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
+                    .lineLimit(1)
                 if !node.children.isEmpty {
                     FolderToggle(count: node.children.count, isExpanded: isExpanded, action: onToggle)
                 }
             }
-            Spacer(minLength: 0)
-            // Keep just this folder (and its subfolders) offline.
-            // Shown only when it differs from the album's own icon.
-            AlbumStatusButton(album: album, folder: node.path, hidesWhenSameAsAlbum: true)
-            RowChevron()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            HStack(spacing: Spacing.xxs) {
+                // Keep just this folder (and its subfolders) offline.
+                // Shown only when it differs from the album's own icon.
+                AlbumStatusButton(album: album, folder: node.path, hidesWhenSameAsAlbum: true)
+                RowChevron()
+            }
+            .fixedSize()
         }
         // Top-level folders line up with the album; deeper ones indent.
         .padding(.leading, CGFloat(depth - 1) * Spacing.l)
