@@ -18,9 +18,14 @@ final class ApplePhotosRatingBackend: RatingBackend {
     private let service = PhotoLibraryService()
     /// PhotoKit writes run one after another so an undo can't overtake the
     /// write it undoes.
-    private var writeChain: Task<Void, Never>?
+    private static var writeChain: Task<Void, Never>?
 
     init(context: ModelContext) { self.context = context }
+
+    /// Waits for ratings still being written, so a fresh read includes them.
+    static func writesFinished() async {
+        await writeChain?.value
+    }
 
     func ratings(for items: [PhotoItem]) -> [String: Int] {
         Dictionary(uniqueKeysWithValues: items.compactMap { item in
@@ -38,8 +43,8 @@ final class ApplePhotosRatingBackend: RatingBackend {
         }
         guard rating != previousRating, let asset = item.asset,
               let value = PHAsset.Rating(rawValue: rating) else { return }
-        let previous = writeChain
-        writeChain = Task { [service] in
+        let previous = Self.writeChain
+        Self.writeChain = Task { [service] in
             await previous?.value
             try? await service.setRating(asset, value)
         }

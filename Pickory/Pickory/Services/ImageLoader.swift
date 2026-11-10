@@ -11,6 +11,13 @@ final class ImageLoader {
     /// until the sharp card-size image is ready.
     static let previewSize = CGSize(width: 400, height: 400)
 
+    /// Enough pixels to stay sharp when zoomed in: twice the screen.
+    static func zoomableSize(displayScale: CGFloat) -> CGSize {
+        let bounds = UIScreen.current?.bounds.size ?? CGSize(width: 1024, height: 1024)
+        let side = max(bounds.width, bounds.height) * displayScale * 2
+        return CGSize(width: side, height: side)
+    }
+
     struct Request {
         let item: PhotoItem
         let pixelSize: CGSize
@@ -193,6 +200,13 @@ final class ImageLoader {
             guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
             return UIImage(cgImage: cg)
         }.value
+    }
+}
+
+private extension UIScreen {
+    /// The screen of the active window scene (`UIScreen.main` is deprecated).
+    @MainActor static var current: UIScreen? {
+        (UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene)?.screen
     }
 }
 

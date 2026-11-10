@@ -14,7 +14,8 @@ private struct CardSizeKey: PreferenceKey {
 /// stars move into the bar so the photo gets all the height.
 /// Right = +1 star, left = next (rating unchanged), up = pick (5 stars),
 /// down = reject.
-/// Each gesture applies to the current photo, then advances.
+/// Each gesture applies to the current photo, then advances. Pinching zooms
+/// the photo for as long as the fingers stay down, then it snaps back.
 struct SwipeDeckView: View {
     @ObservedObject var vm: AlbumSessionViewModel
     var onOpenGrid: () -> Void
@@ -30,7 +31,16 @@ struct SwipeDeckView: View {
     @State private var scrubbing = false
     /// Wider than tall (phone or iPad landscape): stars live in the bar.
     @State private var isLandscape = false
+    /// Zoom of the pinch under way (or snapping back).
+    @State private var peek = Peek.none
+    /// From the first pinch until the photo is back in place: no swiping.
+    @State private var isPeeking = false
+    /// Where the pinch started, relative to the middle of the card area.
+    @State private var peekStart: CGPoint = .zero
+    @State private var cardArea: CGSize = .zero
     @Environment(\.displayScale) private var displayScale
+
+    private static let maxPeekScale: CGFloat = 6
 
     var body: some View {
         Group {
@@ -203,9 +213,10 @@ struct SwipeDeckView: View {
                 let isCurrent = item.id == current.id
                 PhotoCardView(item: item, crop: vm.crop(of: item),
                               intent: isCurrent ? intent : nil,
-                              intentStrength: isCurrent ? strength : 0)
+                              intentStrength: isCurrent ? strength : 0,
+                              isPeeking: isCurrent && isPeeking)
                     .modifier(DeckCardStyle(role: isCurrent ? .current : .next,
-                                            drag: drag, progress: progress))
+                                            drag: drag, progress: progress, peek: peek))
                     .zIndex(isCurrent ? 1 : 0)
                     .allowsHitTesting(isCurrent)
                     .accessibilityHidden(!isCurrent)
@@ -221,10 +232,12 @@ struct SwipeDeckView: View {
             }
         }
         .contentShape(Rectangle())
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { cardArea = $0 }
         // Tap = full screen; a drag of 10+ pt is a swipe instead. On the
         // whole area, so a new swipe can start while the last card flies off.
-        .onTapGesture { fullScreen = vm.current }
-        .gesture(dragGesture)
+        .onTapGesture { if !isPeeking { fullScreen = vm.current } }
+        .gesture(dragGesture, isEnabled: !isPeeking)
+        .gesture(PeekPinchGesture(onBegan: beginPeek, onChanged: updatePeek, onEnded: endPeek))
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: "View Full Screen") { fullScreen = current }
         .accessibilityAction(named: "Pick") { pick() }
@@ -237,6 +250,8 @@ struct SwipeDeckView: View {
                                        value: max(geo.size.width, geo.size.height))
             }
         )
+        // A zoomed photo goes over the stars and the filmstrip.
+        .zIndex(isPeeking ? 1 : 0)
     }
 
     /// 0 at rest, 1 once the drag reaches the swipe threshold (or the card
@@ -257,8 +272,9 @@ struct SwipeDeckView: View {
 
     private var dragGesture: some Gesture {
         DragGesture()
-            .onChanged { drag = $0.translation }
+            .onChanged { if !isPeeking { drag = $0.translation } }
             .onEnded { value in
+                guard !isPeeking else { return }
                 let t = value.translation
                 let v = value.velocity
                 let vertical = abs(t.height) > abs(t.width)
@@ -275,6 +291,37 @@ struct SwipeDeckView: View {
                     withAnimation(.cardSpring) { drag = .zero }
                 }
             }
+    }
+
+    // MARK: Pinch to peek
+
+    private func cardPoint(_ location: CGPoint) -> CGPoint {
+        CGPoint(x: location.x - cardArea.width / 2, y: location.y - cardArea.height / 2)
+    }
+
+    private func beginPeek(at location: CGPoint) {
+        peekStart = cardPoint(location)
+        isPeeking = true
+        // The first finger may already have started a swipe.
+        withAnimation(.cardSpring) { drag = .zero }
+    }
+
+    /// Keeps the part of the photo that was under the fingers under the fingers.
+    private func updatePeek(scale: CGFloat, at location: CGPoint) {
+        let point = cardPoint(location)
+        let s = min(max(scale, 1), Self.maxPeekScale)
+        isPeeking = true
+        peek = Peek(scale: s, offset: CGSize(width: point.x - s * peekStart.x,
+                                             height: point.y - s * peekStart.y))
+    }
+
+    private func endPeek() {
+        withAnimation(.cardSpring, completionCriteria: .logicallyComplete) {
+            peek = .none
+        } completion: {
+            // Not if a new pinch started while this one was snapping back.
+            if peek == .none { isPeeking = false }
+        }
     }
 
     // MARK: End of deck
@@ -370,6 +417,50 @@ struct SwipeDeckView: View {
     }
 }
 
+/// How far the current card is pinched.
+private struct Peek: Equatable {
+    var scale: CGFloat = 1
+    var offset: CGSize = .zero
+    static let none = Peek()
+}
+
+/// A UIKit pinch because it reports where the fingers are as they move, so
+/// the zoom can follow them. Runs alongside the card's drag and tap.
+private struct PeekPinchGesture: UIGestureRecognizerRepresentable {
+    let onBegan: (CGPoint) -> Void
+    let onChanged: (CGFloat, CGPoint) -> Void
+    let onEnded: () -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPinchGestureRecognizer {
+        let pinch = UIPinchGestureRecognizer()
+        pinch.delegate = context.coordinator
+        return pinch
+    }
+
+    func handleUIGestureRecognizerAction(_ pinch: UIPinchGestureRecognizer, context: Context) {
+        let location = context.converter.localLocation
+        switch pinch.state {
+        case .began:
+            onBegan(location)
+            onChanged(pinch.scale, location)
+        case .changed:
+            // The midpoint jumps once one of the two fingers has lifted.
+            if pinch.numberOfTouches >= 2 { onChanged(pinch.scale, location) }
+        case .ended, .cancelled, .failed:
+            onEnded()
+        default:
+            break
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
 /// Top card follows the finger; the card underneath sits a little smaller
 /// and hidden at rest (photos differ in shape, so it would peek out), and
 /// comes up to full size as the drag progresses.
@@ -378,10 +469,13 @@ private struct DeckCardStyle: ViewModifier {
     let role: Role
     let drag: CGSize
     let progress: Double
+    var peek = Peek.none
 
     func body(content: Content) -> some View {
         if role == .current {
             content
+                .scaleEffect(peek.scale)
+                .offset(peek.offset)
                 .offset(drag)
                 .rotationEffect(.degrees(Double(drag.width / 18)), anchor: .bottom)
         } else {

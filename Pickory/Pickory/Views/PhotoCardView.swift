@@ -34,8 +34,12 @@ struct PhotoCardView: View {
     var crop: SoftCrop? = nil
     var intent: SwipeIntent? = nil
     var intentStrength: Double = 0
+    /// Being pinched: fetch a sharper image and hide the badge.
+    var isPeeking = false
 
     @State private var image: UIImage?
+    /// Sharp enough to zoom into; loaded on the first pinch only.
+    @State private var detail: UIImage?
     @Environment(\.displayScale) private var displayScale
 
     /// Width / height of the photo. PhotoKit knows it up front; Dropbox
@@ -52,7 +56,7 @@ struct PhotoCardView: View {
     var body: some View {
         GeometryReader { geo in
             // Anything already in memory shows on the very first frame.
-            let shown = image ?? ImageLoader.shared.cardPlaceholder(
+            let shown = detail ?? image ?? ImageLoader.shared.cardPlaceholder(
                 for: item, fullPixelSize: pixelSize(fitting: geo.size))
             let ratio = aspect(of: shown)
             let fitted = Self.fit(aspect: ratio, in: geo.size)
@@ -72,13 +76,14 @@ struct PhotoCardView: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let crop, intent == nil { CropBadge(aspect: crop.aspect) }
+                if let crop, intent == nil, !isPeeking { CropBadge(aspect: crop.aspect) }
             }
             .frame(width: fitted.width, height: fitted.height)
             .clipShape(RoundedRectangle(cornerRadius: Radius.photo, style: .continuous))
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(.easeOut(duration: 0.2), value: ratio)
             .task(id: LoadKey(id: item.id, crop: crop)) { await loadImage(fitting: geo.size) }
+            .task(id: isPeeking) { await loadDetail() }
         }
         .accessibilityElement()
         .accessibilityLabel(item.date.map {
@@ -145,5 +150,14 @@ struct PhotoCardView: View {
               let sharp = await loader.image(for: item, pixelSize: full, fill: false),
               !Task.isCancelled else { return }
         image = sharp
+    }
+
+    /// Same size as the full-screen viewer, so opening it afterwards is instant.
+    private func loadDetail() async {
+        guard isPeeking, detail == nil else { return }
+        let size = ImageLoader.zoomableSize(displayScale: displayScale)
+        guard let sharp = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false),
+              !Task.isCancelled else { return }
+        detail = sharp
     }
 }

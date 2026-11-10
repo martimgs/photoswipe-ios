@@ -14,7 +14,8 @@ this app. Do not add any `PHAssetChangeRequest.deleteAssets` call.
 UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
 
 ### Screen 1 — Library ("My Photos")
-- List of albums the user has **connected**: cover thumbnail, name, photo count. Settings gear
+- List of albums the user has **connected**: cover thumbnail, name, photo count, and a compact
+  per-star tally of rated photos ("1★125  2★45", also on Dropbox subfolders). Settings gear
   top-right (photo-access status + "Open Settings", app version).
 - Last row "Connect Album" opens a sheet with two sources:
   - **Apple Photos** — only real user-created albums. Never "All Photos"/the whole library,
@@ -36,8 +37,10 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   Restore from the Rejected tab leaves it at 0).
   VoiceOver gets Pick / Reject as actions on the card.
 - While dragging, an overlay on the card shows the change (e.g. a large star).
-- Tap the card = full screen (zoom/pan). Bottom bar: exposure −1 / +1 EV (preview only,
-  never saved) and sticky Instagram crop buttons 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post
+- Pinch the card = quick zoom that follows the fingers and snaps back on release (no swipe
+  happens during a pinch).
+- Tap the card = full screen (zoom/pan). Bottom bar: brightness −1 / +1 (soft midtone curve that
+  never clips highlights; preview only, never saved) and sticky Instagram crop buttons 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post
   carousel, dashed line where it splits); drag/pinch the photo inside the frame. On close, a
   changed crop asks to be saved as a **soft crop** — the photo is never modified; the swipe
   card and grid show the cropped part with a crop badge, and exports add a cropped JPEG copy

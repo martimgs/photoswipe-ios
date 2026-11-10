@@ -18,6 +18,9 @@ struct LibraryView: View {
     @State private var summaries = DropboxSummaryCache()
     @State private var renaming: ConnectedAlbum?
     @State private var newName = ""
+    /// Bumped each time the list comes back on screen: the star counts may
+    /// have changed in the album that was open.
+    @State private var ratingsVersion = 0
 
     var body: some View {
         NavigationStack {
@@ -26,7 +29,8 @@ struct LibraryView: View {
                     let summary = dropboxSummary(for: album)
                     let folders = summary?.folders ?? []
                     NavigationLink(value: AlbumRoute(album: album)) {
-                        AlbumRow(album: album, summary: summary, folderCount: folders.count,
+                        AlbumRow(album: album, summary: summary, ratingsVersion: ratingsVersion,
+                                 folderCount: folders.count,
                                  isExpanded: expanded.contains(album.externalID)) {
                             toggle(album.externalID)
                         }
@@ -48,6 +52,7 @@ struct LibraryView: View {
                         ForEach(flatten(folders, album: album), id: \.node.id) { entry in
                             NavigationLink(value: AlbumRoute(album: album, folder: entry.node.path)) {
                                 FolderRow(album: album, node: entry.node, depth: entry.depth,
+                                          tally: summary?.folderRatings[entry.node.path] ?? RatingTally(),
                                           isExpanded: expanded.contains(key(album, entry.node))) {
                                     toggle(key(album, entry.node))
                                 }
@@ -82,6 +87,7 @@ struct LibraryView: View {
             .safeAreaBar(edge: .top) { header }
             .scrollEdgeEffectHidden(true, for: .top)
             .background(Theme.paper)
+            .onAppear { ratingsVersion += 1 }
             .navigationTitle("Pickory")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AlbumRoute.self) { route in
@@ -164,12 +170,17 @@ struct LibraryView: View {
     private func dropboxSummary(for album: ConnectedAlbum) -> DropboxSummary? {
         guard album.source == .dropbox else { return nil }
         let checked = album.lastCheckedAt
-        if let cached = summaries.byAlbum[album.externalID], cached.checked == checked {
+        if var cached = summaries.byAlbum[album.externalID], cached.checked == checked {
+            if cached.ratingsVersion != ratingsVersion {
+                cached.tallyRatings(version: ratingsVersion, context: context)
+                summaries.byAlbum[album.externalID] = cached
+            }
             return cached
         }
         let items = AlbumSessionViewModel.dropboxItems(albumID: album.externalID, context: context)
-        let summary = DropboxSummary(checked: checked, count: items.count, cover: items.first,
-                                     folders: FolderNode.tree(from: items))
+        var summary = DropboxSummary(checked: checked, count: items.count, cover: items.first,
+                                     folders: FolderNode.tree(from: items), items: items)
+        summary.tallyRatings(version: ratingsVersion, context: context)
         summaries.byAlbum[album.externalID] = summary
         // All covers in a few batched requests, before any folder is expanded.
         let covers = summary.coverIDs
@@ -239,6 +250,30 @@ struct DropboxSummary {
     var count: Int
     var cover: PhotoItem?
     var folders: [FolderNode]
+    var items: [PhotoItem]
+    var ratingsVersion = -1
+    var ratings = RatingTally()
+    /// By folder path; a folder's count includes the folders below it.
+    var folderRatings: [String: RatingTally] = [:]
+
+    @MainActor
+    mutating func tallyRatings(version: Int, context: ModelContext) {
+        let states = PhotoStateStore(context: context).states(source: .dropbox)
+        var album = RatingTally()
+        var byFolder: [String: RatingTally] = [:]
+        for item in items {
+            guard let state = states[item.id], !state.isRejected, state.rating > 0 else { continue }
+            album.add(rating: state.rating)
+            var path = ""
+            for part in item.folder.split(separator: "/") {
+                path += path.isEmpty ? String(part) : "/\(part)"
+                byFolder[path, default: RatingTally()].add(rating: state.rating)
+            }
+        }
+        ratings = album
+        folderRatings = byFolder
+        ratingsVersion = version
+    }
 
     /// The album's cover, then every folder's (all levels).
     var coverIDs: [String] {
@@ -261,10 +296,14 @@ struct AlbumRow: View {
     let album: ConnectedAlbum
     /// Dropbox albums: already counted by the list, so nothing loads here.
     var summary: DropboxSummary?
+    /// Changes when the star counts should be read again.
+    var ratingsVersion = 0
     var folderCount = 0
     var isExpanded = false
     var onToggleFolders: () -> Void = {}
     @State private var info: AlbumInfo?
+    /// Apple Photos albums; Dropbox counts come with the summary.
+    @State private var photosTally = RatingTally()
     @Environment(\.modelContext) private var context
 
     var body: some View {
@@ -290,6 +329,7 @@ struct AlbumRow: View {
                     .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
                     .lineLimit(1)
+                RatingTallyLine(tally: summary?.ratings ?? photosTally)
                 if folderCount > 0 {
                     FolderToggle(count: folderCount, isExpanded: isExpanded, action: onToggleFolders)
                 }
@@ -310,6 +350,18 @@ struct AlbumRow: View {
         .task(id: "\(album.externalID)|\(album.lastCheckedAt?.timeIntervalSince1970 ?? 0)") {
             guard summary == nil else { return }
             self.info = AlbumInfo.load(album, context: context)
+        }
+        .task(id: "\(album.externalID)|\(ratingsVersion)") {
+            guard album.source == .applePhotos else { return }
+            let albumID = album.externalID
+            // The last swipe before leaving the album may still be saving.
+            await ApplePhotosRatingBackend.writesFinished()
+            // Reads every asset in the album, so not on the main thread.
+            let tally = await Task.detached(priority: .utility) {
+                let service = PhotoLibraryService()
+                return service.album(withLocalIdentifier: albumID).map(service.ratingTally(in:))
+            }.value
+            if !Task.isCancelled, let tally { photosTally = tally }
         }
     }
 
@@ -347,6 +399,36 @@ struct AlbumInfo {
     }
 }
 
+/// "1★125  2★45  4★5  5★1" — how far an album has been sorted. Takes no
+/// space until something is rated.
+struct RatingTallyLine: View {
+    let tally: RatingTally
+
+    var body: some View {
+        let levels = tally.levels
+        if !levels.isEmpty {
+            Text(styled(levels))
+                .font(.caption.monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .accessibilityLabel(levels.map { "\($0.count) with \($0.stars) stars" }
+                    .joined(separator: ", "))
+        }
+    }
+
+    private func styled(_ levels: [(stars: Int, count: Int)]) -> AttributedString {
+        var line = AttributedString()
+        for (index, level) in levels.enumerated() {
+            var stars = AttributedString("\(index == 0 ? "" : "  ")\(level.stars)★")
+            stars.foregroundColor = Theme.inkTertiary
+            var count = AttributedString("\(level.count)")
+            count.foregroundColor = Theme.inkSecondary
+            line += stars + count
+        }
+        return line
+    }
+}
+
 /// "· 10 folders ⌄" — expands or collapses a row's subfolders. Borderless so
 /// it can be tapped inside a list row without opening the album.
 struct FolderToggle: View {
@@ -380,6 +462,7 @@ struct FolderRow: View {
     let album: ConnectedAlbum
     let node: FolderNode
     let depth: Int
+    let tally: RatingTally
     let isExpanded: Bool
     let onToggle: () -> Void
 
@@ -404,6 +487,7 @@ struct FolderRow: View {
                     .font(.smallMetadata)
                     .foregroundStyle(Theme.inkSecondary)
                     .lineLimit(1)
+                RatingTallyLine(tally: tally)
                 if !node.children.isEmpty {
                     FolderToggle(count: node.children.count, isExpanded: isExpanded, action: onToggle)
                 }

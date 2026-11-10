@@ -8,7 +8,7 @@ import CoreImage.CIFilterBuiltins
 /// drag to pan when zoomed, X to close.
 ///
 /// Review tools along the bottom:
-/// - Exposure −1 / +1 (one stop each). Preview only, never saved.
+/// - Brightness −1 / +1 (a soft midtone curve). Preview only, never saved.
 /// - Instagram crop 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post carousel,
 ///   dashed line where it splits). The button sticks; drag and pinch the photo
 ///   inside the frame. On close, the crop can be saved as a soft crop: the
@@ -19,10 +19,10 @@ struct FullScreenPhotoView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.modelContext) private var context
     @State private var original: UIImage?
-    /// `original` with the exposure preview applied.
+    /// `original` with the brightness preview applied.
     @State private var shown: UIImage?
-    /// Preview brightness in stops. Never saved.
-    @State private var exposure = 0
+    /// Preview brightness in steps. Never saved.
+    @State private var brightness = 0
     @State private var aspect: CropAspect?
     /// The soft crop stored for this photo when the viewer opened.
     @State private var saved: SoftCrop?
@@ -31,7 +31,7 @@ struct FullScreenPhotoView: View {
     /// Height of the bottom controls, kept clear of the crop frame.
     @State private var controlsHeight: CGFloat = 60
 
-    private static let exposureRange = -3...3
+    private static let brightnessRange = -3...3
 
     private enum Prompt { case save, remove }
 
@@ -77,15 +77,13 @@ struct FullScreenPhotoView: View {
             saved = PhotoStateStore(context: context).state(source: item.source, photoID: item.id)?.softCrop
             aspect = saved?.aspect
             // Higher resolution than the card so zooming stays sharp.
-            let bounds = UIScreen.current?.bounds.size ?? CGSize(width: 1024, height: 1024)
-            let side = max(bounds.width, bounds.height) * displayScale * 2
-            original = await ImageLoader.shared.image(for: item, pixelSize: CGSize(width: side, height: side), fill: false)
+            original = await ImageLoader.shared.image(for: item, pixelSize: ImageLoader.zoomableSize(displayScale: displayScale), fill: false)
             shown = original
         }
-        .task(id: exposure) {
+        .task(id: brightness) {
             guard let original else { return }
-            if exposure == 0 { shown = original; return }
-            if let adjusted = await ExposurePreview.apply(Float(exposure), to: original), !Task.isCancelled {
+            if brightness == 0 { shown = original; return }
+            if let adjusted = await BrightnessPreview.apply(brightness, to: original), !Task.isCancelled {
                 shown = adjusted
             }
         }
@@ -93,32 +91,33 @@ struct FullScreenPhotoView: View {
 
     // MARK: Controls
 
-    /// One row when it fits, otherwise exposure above crop (narrow phones).
+    /// One row when it fits, otherwise brightness above crop (narrow phones).
     private var controls: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: Spacing.s) { exposureControls; cropControls }
-            VStack(spacing: Spacing.xs) { exposureControls; cropControls }
+            HStack(spacing: Spacing.s) { brightnessControls; cropControls }
+            VStack(spacing: Spacing.xs) { brightnessControls; cropControls }
         }
         .padding(.horizontal, Spacing.m)
         .padding(.bottom, Spacing.m)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlsHeight = $0 }
     }
 
-    private var exposureControls: some View {
+    private var brightnessControls: some View {
         HStack(spacing: 0) {
-            controlButton("−1", label: "Darker", enabled: exposure > Self.exposureRange.lowerBound) {
-                exposure -= 1
+            controlButton("−1", label: "Darker", enabled: brightness > Self.brightnessRange.lowerBound) {
+                brightness -= 1
             }
-            Button { exposure = 0 } label: {
-                Text(exposureLabel)
+            Button { brightness = 0 } label: {
+                Label(brightnessLabel, systemImage: "sun.max")
+                    .labelStyle(.titleAndIcon)
                     .font(.footnote.monospacedDigit())
-                    .foregroundStyle(exposure == 0 ? .white.opacity(0.6) : .white)
+                    .foregroundStyle(brightness == 0 ? .white.opacity(0.6) : .white)
                     .frame(minWidth: 52, minHeight: 44)
             }
-            .accessibilityLabel("Exposure \(exposureLabel)")
-            .accessibilityHint("Resets the exposure preview")
-            controlButton("+1", label: "Brighter", enabled: exposure < Self.exposureRange.upperBound) {
-                exposure += 1
+            .accessibilityLabel("Brightness \(brightnessLabel)")
+            .accessibilityHint("Resets the brightness preview")
+            controlButton("+1", label: "Brighter", enabled: brightness < Self.brightnessRange.upperBound) {
+                brightness += 1
             }
         }
         .background(.ultraThinMaterial, in: Capsule())
@@ -160,8 +159,8 @@ struct FullScreenPhotoView: View {
         .accessibilityLabel(label)
     }
 
-    private var exposureLabel: String {
-        exposure == 0 ? "0 EV" : String(format: "%+d EV", exposure)
+    private var brightnessLabel: String {
+        brightness == 0 ? "0" : String(format: "%+d", brightness)
     }
 
     // MARK: Closing
@@ -196,19 +195,33 @@ private final class CropTracker {
     var crop: SoftCrop?
 }
 
-/// Review-only brightness: Core Image exposure adjust, rendered off the main
-/// thread at the image's own size so zoom and crop framing are untouched.
-private enum ExposurePreview {
-    private static let context = CIContext()
+/// Review-only brightness: a tone curve that lifts (or lowers) the midtones
+/// like dragging the middle of a Photoshop curve. Black and white stay where
+/// they are, so highlights compress instead of clipping. Rendered off the
+/// main thread at the image's own size so zoom and crop framing are untouched.
+private enum BrightnessPreview {
+    /// P3, so wide-gamut colours stay inside the curve's 0–1 range.
+    private static let context = CIContext(options: [
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) as Any,
+    ])
+    /// Curve bend per step. The largest step's total must stay under 1, or
+    /// the curve would stop rising towards white.
+    private static let bendPerStep: CGFloat = 0.3
 
-    static func apply(_ ev: Float, to image: UIImage) async -> UIImage? {
+    static func apply(_ step: Int, to image: UIImage) async -> UIImage? {
         guard let cg = image.cgImage else { return nil }
         let scale = image.scale, orientation = image.imageOrientation
+        let bend = CGFloat(step) * bendPerStep
         return await Task.detached(priority: .userInitiated) {
             let input = CIImage(cgImage: cg)
-            let filter = CIFilter.exposureAdjust()
+            func point(_ x: CGFloat) -> CGPoint { CGPoint(x: x, y: x + bend * x * (1 - x)) }
+            let filter = CIFilter.toneCurve()
             filter.inputImage = input
-            filter.ev = ev
+            filter.point0 = point(0)
+            filter.point1 = point(0.25)
+            filter.point2 = point(0.5)
+            filter.point3 = point(0.75)
+            filter.point4 = point(1)
             guard let output = filter.outputImage,
                   let space = CGColorSpace(name: CGColorSpace.displayP3),
                   let rendered = context.createCGImage(output, from: input.extent,
@@ -216,13 +229,6 @@ private enum ExposurePreview {
             else { return nil }
             return UIImage(cgImage: rendered, scale: scale, orientation: orientation)
         }.value
-    }
-}
-
-private extension UIScreen {
-    /// The screen of the active window scene (`UIScreen.main` is deprecated).
-    @MainActor static var current: UIScreen? {
-        (UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene)?.screen
     }
 }
 
