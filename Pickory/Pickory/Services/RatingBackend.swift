@@ -18,9 +18,14 @@ final class ApplePhotosRatingBackend: RatingBackend {
     private let service = PhotoLibraryService()
     /// PhotoKit writes run one after another so an undo can't overtake the
     /// write it undoes.
-    private var writeChain: Task<Void, Never>?
+    private static var writeChain: Task<Void, Never>?
 
     init(context: ModelContext) { self.context = context }
+
+    /// Waits for ratings still being written, so a fresh read includes them.
+    static func writesFinished() async {
+        await writeChain?.value
+    }
 
     func ratings(for items: [PhotoItem]) -> [String: Int] {
         Dictionary(uniqueKeysWithValues: items.compactMap { item in
@@ -38,8 +43,8 @@ final class ApplePhotosRatingBackend: RatingBackend {
         }
         guard rating != previousRating, let asset = item.asset,
               let value = PHAsset.Rating(rawValue: rating) else { return }
-        let previous = writeChain
-        writeChain = Task { [service] in
+        let previous = Self.writeChain
+        Self.writeChain = Task { [service] in
             await previous?.value
             try? await service.setRating(asset, value)
         }
@@ -103,13 +108,16 @@ struct PhotoStateStore {
             predicate: #Predicate { $0.sourceRaw == raw && $0.photoID == photoID })).first
     }
 
-    /// Saved soft crops by photo ID.
-    func crops(source: PhotoSourceKind) -> [String: SoftCrop] {
+    /// Saved soft crops and brightness by photo ID.
+    func edits(source: PhotoSourceKind) -> [String: SoftEdit] {
         let raw = source.rawValue
-        let cropped = (try? context.fetch(FetchDescriptor<PhotoState>(
-            predicate: #Predicate { $0.sourceRaw == raw && $0.cropAspectRaw != nil }))) ?? []
-        return Dictionary(cropped.compactMap { s in s.softCrop.map { (s.photoID, $0) } },
-                          uniquingKeysWith: { a, _ in a })
+        let edited = (try? context.fetch(FetchDescriptor<PhotoState>(
+            predicate: #Predicate { $0.sourceRaw == raw && ($0.cropAspectRaw != nil || $0.brightness != 0) }))) ?? []
+        let pairs = edited.compactMap { s -> (String, SoftEdit)? in
+            let edit = SoftEdit(crop: s.softCrop, brightness: s.brightness)
+            return edit.isEmpty ? nil : (s.photoID, edit)
+        }
+        return Dictionary(pairs, uniquingKeysWith: { a, _ in a })
     }
 
     func update(source: PhotoSourceKind, photoID: String, _ change: (PhotoState) -> Void) {

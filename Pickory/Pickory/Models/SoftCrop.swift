@@ -25,6 +25,17 @@ enum CropAspect: String, CaseIterable, Identifiable {
     var fileLabel: String { rawValue.replacingOccurrences(of: ":", with: "x") }
 }
 
+/// What's saved for a photo in the full-screen viewer: a crop, a brightness
+/// step, or both. Only remembered, never applied to the photo. Exports add
+/// an edited copy next to the untouched original.
+struct SoftEdit: Equatable {
+    var crop: SoftCrop?
+    /// Steps of `BrightnessCurve`; 0 = unchanged.
+    var brightness = 0
+
+    var isEmpty: Bool { crop == nil && brightness == 0 }
+}
+
 /// A crop that is only remembered, never applied to the photo. Exports add a
 /// cropped copy next to the untouched original.
 struct SoftCrop: Equatable {

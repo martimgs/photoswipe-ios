@@ -32,10 +32,18 @@ enum SwipeIntent: Equatable {
 struct PhotoCardView: View {
     let item: PhotoItem
     var crop: SoftCrop? = nil
+    /// Saved brightness step, shown on the card. Never applied to the photo.
+    var brightness = 0
     var intent: SwipeIntent? = nil
     var intentStrength: Double = 0
+    /// Being pinched: fetch a sharper image and hide the badge.
+    var isPeeking = false
 
     @State private var image: UIImage?
+    /// The brightness `image` was rendered at.
+    @State private var imageBrightness = 0
+    /// Sharp enough to zoom into; loaded on the first pinch only.
+    @State private var detail: (brightness: Int, image: UIImage)?
     @Environment(\.displayScale) private var displayScale
 
     /// Width / height of the photo. PhotoKit knows it up front; Dropbox
@@ -52,8 +60,13 @@ struct PhotoCardView: View {
     var body: some View {
         GeometryReader { geo in
             // Anything already in memory shows on the very first frame.
-            let shown = image ?? ImageLoader.shared.cardPlaceholder(
-                for: item, fullPixelSize: pixelSize(fitting: geo.size))
+            // An image at an old brightness is only the last resort, so a
+            // newly saved brightness never shows the previous one first.
+            let shown = (detail?.brightness == brightness ? detail?.image : nil)
+                ?? (imageBrightness == brightness ? image : nil)
+                ?? ImageLoader.shared.cardPlaceholder(
+                    for: item, fullPixelSize: pixelSize(fitting: geo.size), brightness: brightness)
+                ?? image
             let ratio = aspect(of: shown)
             let fitted = Self.fit(aspect: ratio, in: geo.size)
             ZStack {
@@ -72,13 +85,20 @@ struct PhotoCardView: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let crop, intent == nil { CropBadge(aspect: crop.aspect) }
+                if intent == nil, !isPeeking {
+                    // Each badge has its own 6 pt margin.
+                    HStack(spacing: -6) {
+                        if let crop { CropBadge(aspect: crop.aspect) }
+                        if brightness != 0 { BrightnessBadge(step: brightness) }
+                    }
+                }
             }
             .frame(width: fitted.width, height: fitted.height)
             .clipShape(RoundedRectangle(cornerRadius: Radius.photo, style: .continuous))
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(.easeOut(duration: 0.2), value: ratio)
-            .task(id: LoadKey(id: item.id, crop: crop)) { await loadImage(fitting: geo.size) }
+            .task(id: LoadKey(id: item.id, crop: crop, brightness: brightness)) { await loadImage(fitting: geo.size) }
+            .task(id: isPeeking) { await loadDetail() }
         }
         .accessibilityElement()
         .accessibilityLabel(item.date.map {
@@ -86,10 +106,12 @@ struct PhotoCardView: View {
         } ?? "Photo")
     }
 
-    /// Reload when a crop is saved: it may need a sharper image.
+    /// Reload when a crop is saved (it may need a sharper image) or the
+    /// saved brightness changes.
     private struct LoadKey: Equatable {
         let id: String
         let crop: SoftCrop?
+        let brightness: Int
     }
 
     private func overlay(_ intent: SwipeIntent) -> some View {
@@ -122,8 +144,13 @@ struct PhotoCardView: View {
     /// the photo is oriented, uncropped. A soft crop shows only part of
     /// the image, so it gets proportionally more (up to 3x).
     private func pixelSize(fitting cardSize: CGSize) -> CGSize {
+        Self.loadSize(cardPixelSide: max(cardSize.width, cardSize.height) * displayScale, crop: crop)
+    }
+
+    /// The size a card of this many pixels loads, for getting it ready early.
+    static func loadSize(cardPixelSide: CGFloat, crop: SoftCrop?) -> CGSize {
         let zoom = crop.map { min(1 / max(min($0.rect.width, $0.rect.height), 0.01), 3) } ?? 1
-        let side = (max(cardSize.width, cardSize.height) * displayScale * zoom).rounded()
+        let side = (cardPixelSide * zoom).rounded()
         return CGSize(width: side, height: side)
     }
 
@@ -132,18 +159,34 @@ struct PhotoCardView: View {
     private func loadImage(fitting cardSize: CGSize) async {
         let loader = ImageLoader.shared
         let full = pixelSize(fitting: cardSize)
-        if let sharp = loader.cachedImage(for: item, pixelSize: full, fill: false) {
-            image = sharp
+        if let sharp = loader.cachedImage(for: item, pixelSize: full, fill: false, brightness: brightness) {
+            show(sharp)
             return
         }
-        if let preview = await loader.image(for: item, pixelSize: ImageLoader.previewSize, fill: false) {
+        if let preview = await loader.image(for: item, pixelSize: ImageLoader.previewSize, fill: false,
+                                            brightness: brightness) {
             guard !Task.isCancelled else { return }
-            image = preview
+            show(preview)
         }
         try? await Task.sleep(for: .milliseconds(120))
         guard !Task.isCancelled,
-              let sharp = await loader.image(for: item, pixelSize: full, fill: false),
+              let sharp = await loader.image(for: item, pixelSize: full, fill: false, brightness: brightness),
               !Task.isCancelled else { return }
-        image = sharp
+        show(sharp)
+    }
+
+    private func show(_ loaded: UIImage) {
+        image = loaded
+        imageBrightness = brightness
+    }
+
+    /// Same size as the full-screen viewer, so opening it afterwards is instant.
+    private func loadDetail() async {
+        guard isPeeking, detail?.brightness != brightness else { return }
+        let size = ImageLoader.zoomableSize(displayScale: displayScale)
+        guard let sharp = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false,
+                                                         brightness: brightness),
+              !Task.isCancelled else { return }
+        detail = (brightness, sharp)
     }
 }

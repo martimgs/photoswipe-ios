@@ -13,6 +13,7 @@ struct GridPhotoCell: View {
     let width: CGFloat
     let rating: Int
     let crop: SoftCrop?
+    var brightness = 0
     var dimmed = false
     var unsynced = false
 
@@ -44,17 +45,18 @@ struct GridPhotoCell: View {
     /// part shown stays sharp; plain tiles let the loader fill the cell.
     private var request: (size: CGSize, fill: Bool, key: String) {
         let base = CGSize(width: width * displayScale, height: height * displayScale)
-        guard let rect = shownRect else { return (base, true, item.id) }
+        guard let rect = shownRect else { return (base, true, "\(item.id)|\(brightness)") }
         let zoom = min(1 / max(min(rect.width, rect.height), 0.01), 3)
         let side = (max(base.width, base.height) * zoom).rounded()
-        return (CGSize(width: side, height: side), false, "\(item.id)|\(rect)")
+        return (CGSize(width: side, height: side), false, "\(item.id)|\(brightness)|\(rect)")
     }
 
     var body: some View {
         let request = self.request
         let shown = loaded?.key == request.key
             ? loaded?.image
-            : ImageLoader.shared.cachedImage(for: item, pixelSize: request.size, fill: request.fill)
+            : ImageLoader.shared.cachedImage(for: item, pixelSize: request.size, fill: request.fill,
+                                             brightness: brightness)
         ZStack {
             Theme.surface
             if let shown {
@@ -75,14 +77,18 @@ struct GridPhotoCell: View {
             if rating > 0 { GridLabel(text: "\(rating)", symbol: "star.fill", symbolAfter: true) }
         }
         .overlay(alignment: .topTrailing) {
-            if let crop { GridLabel(text: crop.aspect.rawValue, symbol: "crop") }
+            HStack(spacing: 0) {
+                if brightness != 0 { GridLabel(text: BrightnessCurve.label(brightness), symbol: "sun.max") }
+                if let crop { GridLabel(text: crop.aspect.rawValue, symbol: "crop") }
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             if unsynced { GridLabel(text: nil, symbol: "arrow.up.circle") }
         }
         .contentShape(Rectangle())
         .task(id: request.key) {
-            if let image = await ImageLoader.shared.image(for: item, pixelSize: request.size, fill: request.fill) {
+            if let image = await ImageLoader.shared.image(for: item, pixelSize: request.size, fill: request.fill,
+                                                          brightness: brightness) {
                 loaded = (request.key, image)
             }
         }

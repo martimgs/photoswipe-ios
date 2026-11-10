@@ -49,6 +49,22 @@ struct CarouselSplitLine: View {
     }
 }
 
+/// Small sun + "+1" chip marking a photo that has a saved brightness.
+struct BrightnessBadge: View {
+    let step: Int
+
+    var body: some View {
+        Label(BrightnessCurve.label(step), systemImage: "sun.max")
+            .labelStyle(.titleAndIcon)
+            .font(.caption2.weight(.medium).monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(.black.opacity(0.45), in: Capsule())
+            .padding(6)
+            .accessibilityLabel("Brightness \(BrightnessCurve.label(step))")
+    }
+}
+
 /// Small crop-icon + "4:5" chip marking a photo that has a soft crop.
 struct CropBadge: View {
     let aspect: CropAspect

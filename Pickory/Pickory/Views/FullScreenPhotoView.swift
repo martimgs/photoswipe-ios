@@ -1,124 +1,179 @@
 import SwiftUI
 import SwiftData
 import UIKit
-import CoreImage
-import CoreImage.CIFilterBuiltins
 
 /// Full-screen, uncropped view of one photo. Pinch or double-tap to zoom,
-/// drag to pan when zoomed, X to close.
+/// drag to pan when zoomed. Done keeps the edits, Cancel drops them.
 ///
 /// Review tools along the bottom:
-/// - Exposure −1 / +1 (one stop each). Preview only, never saved.
+/// - Brightness −1 / +1 (a soft midtone curve).
 /// - Instagram crop 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post carousel,
 ///   dashed line where it splits). The button sticks; drag and pinch the photo
-///   inside the frame. On close, the crop can be saved as a soft crop: the
-///   photo itself is never changed, exports add a cropped copy.
+///   inside the frame.
+///
+/// Crop and brightness are saved as a soft edit: the photo itself is never
+/// changed, exports add an edited copy.
 struct FullScreenPhotoView: View {
     let item: PhotoItem
+    /// Runs after an edit is stored, before the viewer closes.
+    var onSaved: () async -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
     @Environment(\.modelContext) private var context
     @State private var original: UIImage?
-    /// `original` with the exposure preview applied.
+    /// `original` with the brightness preview applied.
     @State private var shown: UIImage?
-    /// Preview brightness in stops. Never saved.
-    @State private var exposure = 0
+    /// Brightness step on screen.
+    @State private var brightness = 0
+    /// The brightness stored for this photo when the viewer opened.
+    @State private var savedBrightness = 0
     @State private var aspect: CropAspect?
     /// The soft crop stored for this photo when the viewer opened.
     @State private var saved: SoftCrop?
     @State private var tracker = CropTracker()
-    @State private var prompt: Prompt?
+    /// The small question showing under Cancel or Revert.
+    @State private var confirming: Confirmation?
+    /// The photo was dragged or zoomed away from its saved crop. A copy of
+    /// what the canvas reports, so Done and Revert swap as soon as it moves.
+    @State private var framingChanged = false
+    /// Height of the status bar area (Dynamic Island), where Cancel and Done sit.
+    @State private var topInset: CGFloat = 0
+    /// Saved and about to close; further taps on Done or Cancel do nothing.
+    @State private var isSaving = false
     /// Height of the bottom controls, kept clear of the crop frame.
     @State private var controlsHeight: CGFloat = 60
 
-    private static let exposureRange = -3...3
+    private static let brightnessRange = BrightnessCurve.range
 
-    private enum Prompt { case save, remove }
+    private enum Confirmation { case discard, revert }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
             if let shown {
                 PhotoCanvasView(image: shown, aspect: aspect, initialCrop: saved,
-                                bottomReserve: controlsHeight) { tracker.crop = $0 }
+                                bottomReserve: controlsHeight, onCrop: cropReported)
                     .ignoresSafeArea()
             } else {
                 ProgressView().tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .padding(16)
-            .accessibilityLabel("Close")
         }
         .overlay(alignment: .bottom) { if shown != nil { controls } }
-        .environment(\.colorScheme, .dark)
-        .statusBarHidden()
-        .alert("Save Crop?", isPresented: isPrompting(.save)) {
-            Button("Save") { save(tracker.crop) }
-            Button("Don't Save", role: .destructive) { dismiss() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Saved as a soft crop: the photo itself isn't changed. Exports add a cropped copy.")
-        }
-        .alert("Remove Saved Crop?", isPresented: isPrompting(.remove)) {
-            Button("Remove", role: .destructive) { save(nil) }
-            Button("Keep Crop") { dismiss() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The photo itself isn't changed either way.")
-        }
-        .task(id: item.id) {
-            saved = PhotoStateStore(context: context).state(source: item.source, photoID: item.id)?.softCrop
-            aspect = saved?.aspect
-            // Higher resolution than the card so zooming stays sharp.
-            let bounds = UIScreen.current?.bounds.size ?? CGSize(width: 1024, height: 1024)
-            let side = max(bounds.width, bounds.height) * displayScale * 2
-            original = await ImageLoader.shared.image(for: item, pixelSize: CGSize(width: side, height: side), fill: false)
-            shown = original
-        }
-        .task(id: exposure) {
-            guard let original else { return }
-            if exposure == 0 { shown = original; return }
-            if let adjusted = await ExposurePreview.apply(Float(exposure), to: original), !Task.isCancelled {
-                shown = adjusted
+        .overlay {
+            // A tap anywhere else keeps editing.
+            if confirming != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { setConfirming(nil) }
             }
         }
+        .overlay(alignment: .top) { topBar }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
+        .environment(\.colorScheme, .dark)
+        .statusBarHidden()
+        .task(id: item.id) {
+            let state = PhotoStateStore(context: context).state(source: item.source, photoID: item.id)
+            saved = state?.softCrop
+            savedBrightness = state?.brightness ?? 0
+            brightness = savedBrightness
+            aspect = saved?.aspect
+            // Higher resolution than the card so zooming stays sharp.
+            original = await ImageLoader.shared.image(for: item, pixelSize: ImageLoader.zoomableSize(displayScale: displayScale), fill: false)
+            await renderBrightness()
+        }
+        .task(id: brightness) { await renderBrightness() }
+    }
+
+    /// Shows `original` at the current brightness step.
+    private func renderBrightness() async {
+        guard let original else { return }
+        let step = brightness
+        let adjusted = step == 0 ? original : await BrightnessCurve.apply(step, to: original) ?? original
+        if step == brightness { shown = adjusted }
     }
 
     // MARK: Controls
 
-    /// One row when it fits, otherwise exposure above crop (narrow phones).
+    private var topBar: some View {
+        HStack(alignment: .top) {
+            // Negative spacing: the pills sit closer than their tap areas.
+            VStack(alignment: .leading, spacing: -10) {
+                Button(action: cancel) { pill("Cancel") }
+                if confirming == .discard {
+                    Button { dismiss() } label: { pill("Discard changes?", color: .red) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topLeading)))
+                }
+            }
+            Spacer()
+            // With nothing to save, Done would only repeat Cancel.
+            VStack(alignment: .trailing, spacing: -10) {
+                if canRevert {
+                    Button { toggleConfirming(.revert) } label: { pill("Revert", weight: .semibold, color: .red) }
+                } else {
+                    Button(action: done) { pill("Done", weight: .semibold) }
+                }
+                if confirming == .revert {
+                    Button { save(SoftEdit()) } label: { pill("Revert to original?", color: .red) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topTrailing)))
+                }
+            }
+        }
+        // Either side of the Dynamic Island, level with it. Far enough in to
+        // clear the screen's rounded corners.
+        .padding(.horizontal, 20)
+        .padding(.top, max(topInset / 2 - 22, 4))
+        .ignoresSafeArea(edges: .top)
+    }
+
+    /// A small label on glass, inside a tap area of the full 44 pt.
+    private func pill(_ title: String, weight: Font.Weight = .medium, color: Color = .white) -> some View {
+        Text(title)
+            .font(.footnote.weight(weight))
+            .foregroundStyle(color)
+            .padding(.horizontal, Spacing.s)
+            .frame(height: 28)
+            .background(.ultraThinMaterial, in: Capsule())
+            .frame(height: 44)
+            .contentShape(Rectangle())
+    }
+
+    private func setConfirming(_ question: Confirmation?) {
+        withAnimation(.snappy(duration: 0.18)) { confirming = question }
+    }
+
+    private func toggleConfirming(_ question: Confirmation) {
+        setConfirming(confirming == question ? nil : question)
+    }
+
+    /// One row when it fits, otherwise brightness above crop (narrow phones).
     private var controls: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: Spacing.s) { exposureControls; cropControls }
-            VStack(spacing: Spacing.xs) { exposureControls; cropControls }
+            HStack(spacing: Spacing.s) { brightnessControls; cropControls }
+            VStack(spacing: Spacing.xs) { brightnessControls; cropControls }
         }
         .padding(.horizontal, Spacing.m)
         .padding(.bottom, Spacing.m)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlsHeight = $0 }
     }
 
-    private var exposureControls: some View {
+    private var brightnessControls: some View {
         HStack(spacing: 0) {
-            controlButton("−1", label: "Darker", enabled: exposure > Self.exposureRange.lowerBound) {
-                exposure -= 1
+            controlButton("−1", label: "Darker", enabled: brightness > Self.brightnessRange.lowerBound) {
+                brightness -= 1
             }
-            Button { exposure = 0 } label: {
-                Text(exposureLabel)
+            Button { brightness = 0 } label: {
+                Label(brightnessLabel, systemImage: "sun.max")
+                    .labelStyle(.titleAndIcon)
                     .font(.footnote.monospacedDigit())
-                    .foregroundStyle(exposure == 0 ? .white.opacity(0.6) : .white)
+                    .foregroundStyle(brightness == 0 ? .white.opacity(0.6) : .white)
                     .frame(minWidth: 52, minHeight: 44)
             }
-            .accessibilityLabel("Exposure \(exposureLabel)")
-            .accessibilityHint("Resets the exposure preview")
-            controlButton("+1", label: "Brighter", enabled: exposure < Self.exposureRange.upperBound) {
-                exposure += 1
+            .accessibilityLabel("Brightness \(brightnessLabel)")
+            .accessibilityHint("Resets the brightness")
+            controlButton("+1", label: "Brighter", enabled: brightness < Self.brightnessRange.upperBound) {
+                brightness += 1
             }
         }
         .background(.ultraThinMaterial, in: Capsule())
@@ -160,33 +215,58 @@ struct FullScreenPhotoView: View {
         .accessibilityLabel(label)
     }
 
-    private var exposureLabel: String {
-        exposure == 0 ? "0 EV" : String(format: "%+d EV", exposure)
+    private var brightnessLabel: String {
+        BrightnessCurve.label(brightness)
     }
 
     // MARK: Closing
 
-    private func close() {
-        guard shown != nil else { dismiss(); return }
-        if aspect != nil, let crop = tracker.crop {
-            if crop.isClose(to: saved) { dismiss() } else { prompt = .save }
-        } else if aspect == nil, saved != nil {
-            prompt = .remove
-        } else {
+    /// What Done would store; nil when nothing differs from what's saved.
+    private var changedEdit: SoftEdit? {
+        guard shown != nil else { return nil }
+        let framed = aspect == nil ? nil : tracker.crop ?? saved
+        let cropChanged = framed.map { !$0.isClose(to: saved) } ?? (saved != nil)
+        guard cropChanged || brightness != savedBrightness else { return nil }
+        return SoftEdit(crop: cropChanged ? framed : saved, brightness: brightness)
+    }
+
+    /// Something is saved for this photo and nothing has changed since.
+    private var canRevert: Bool {
+        shown != nil && !framingChanged && changedEdit == nil && (saved != nil || savedBrightness != 0)
+    }
+
+    /// Runs often while the photo moves, and during view updates, so the
+    /// state changes only when the answer flips, and on the next turn.
+    private func cropReported(_ crop: SoftCrop?) {
+        tracker.crop = crop
+        let changed = crop.map { !$0.isClose(to: saved) } ?? false
+        if changed != framingChanged {
+            DispatchQueue.main.async { framingChanged = changed }
+        }
+    }
+
+    private func cancel() {
+        guard !isSaving else { return }
+        if changedEdit == nil { dismiss() } else { toggleConfirming(.discard) }
+    }
+
+    private func done() {
+        guard !isSaving else { return }
+        if let edit = changedEdit { save(edit) } else { dismiss() }
+    }
+
+    private func save(_ edit: SoftEdit) {
+        guard !isSaving else { return }
+        isSaving = true
+        PhotoStateStore(context: context).update(source: item.source, photoID: item.id) {
+            $0.softCrop = edit.crop
+            $0.brightness = edit.brightness
+        }
+        if !edit.isEmpty { Haptics.success() }
+        Task {
+            await onSaved()
             dismiss()
         }
-    }
-
-    private func save(_ crop: SoftCrop?) {
-        PhotoStateStore(context: context).update(source: item.source, photoID: item.id) {
-            $0.softCrop = crop
-        }
-        if crop != nil { Haptics.success() }
-        dismiss()
-    }
-
-    private func isPrompting(_ p: Prompt) -> Binding<Bool> {
-        Binding(get: { prompt == p }, set: { if !$0 { prompt = nil } })
     }
 }
 
@@ -194,36 +274,6 @@ struct FullScreenPhotoView: View {
 /// re-render the SwiftUI view on every frame.
 private final class CropTracker {
     var crop: SoftCrop?
-}
-
-/// Review-only brightness: Core Image exposure adjust, rendered off the main
-/// thread at the image's own size so zoom and crop framing are untouched.
-private enum ExposurePreview {
-    private static let context = CIContext()
-
-    static func apply(_ ev: Float, to image: UIImage) async -> UIImage? {
-        guard let cg = image.cgImage else { return nil }
-        let scale = image.scale, orientation = image.imageOrientation
-        return await Task.detached(priority: .userInitiated) {
-            let input = CIImage(cgImage: cg)
-            let filter = CIFilter.exposureAdjust()
-            filter.inputImage = input
-            filter.ev = ev
-            guard let output = filter.outputImage,
-                  let space = CGColorSpace(name: CGColorSpace.displayP3),
-                  let rendered = context.createCGImage(output, from: input.extent,
-                                                       format: .RGBA8, colorSpace: space)
-            else { return nil }
-            return UIImage(cgImage: rendered, scale: scale, orientation: orientation)
-        }.value
-    }
-}
-
-private extension UIScreen {
-    /// The screen of the active window scene (`UIScreen.main` is deprecated).
-    @MainActor static var current: UIScreen? {
-        (UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene)?.screen
-    }
 }
 
 // MARK: - Canvas

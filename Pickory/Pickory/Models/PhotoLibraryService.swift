@@ -41,6 +41,15 @@ final class PhotoLibraryService {
         PHAsset.fetchAssets(in: album, options: imagesOnly).count
     }
 
+    /// Star counts of an album's photos, read fresh from PhotoKit.
+    func ratingTally(in album: PHAssetCollection) -> RatingTally {
+        var tally = RatingTally()
+        PHAsset.fetchAssets(in: album, options: imagesOnly).enumerateObjects { asset, _, _ in
+            tally.add(rating: asset.rating.rawValue)
+        }
+        return tally
+    }
+
     /// The album's key photo, falling back to its first image.
     func coverPhoto(of album: PHAssetCollection) -> PHAsset? {
         PHAsset.fetchKeyAssets(in: album, options: imagesOnly)?.firstObject
