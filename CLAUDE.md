@@ -41,8 +41,9 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   happens during a pinch).
 - Tap the card = full screen (zoom/pan). Bottom bar: brightness −1 / +1 (soft midtone curve that
   never clips highlights; can be saved with the crop, see below) and sticky Instagram crop buttons 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post
-  carousel, dashed line where it splits); drag/pinch the photo inside the frame. On close, a
-  changed crop or brightness asks to be saved as a **soft edit** (brightness alone gets a sun badge
+  carousel, dashed line where it splits); drag/pinch the photo inside the frame. Cancel and
+  Done at the top, like the Photos editor: Cancel asks "Discard changes?" only if something changed;
+  Done saves a changed crop or brightness as a **soft edit** without asking (brightness alone gets a sun badge
   and an "(edited)" export copy) — the photo is never modified; the swipe
   card and grid show the cropped part with a crop badge, and exports add a cropped JPEG copy
   next to the untouched original (an 8:5 crop also as its two 4:5 posts).

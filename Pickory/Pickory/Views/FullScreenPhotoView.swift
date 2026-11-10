@@ -3,7 +3,7 @@ import SwiftData
 import UIKit
 
 /// Full-screen, uncropped view of one photo. Pinch or double-tap to zoom,
-/// drag to pan when zoomed, X to close.
+/// drag to pan when zoomed. Done keeps the edits, Cancel drops them.
 ///
 /// Review tools along the bottom:
 /// - Brightness −1 / +1 (a soft midtone curve).
@@ -11,10 +11,12 @@ import UIKit
 ///   dashed line where it splits). The button sticks; drag and pinch the photo
 ///   inside the frame.
 ///
-/// On close, a changed crop or brightness can be saved as a soft edit: the
-/// photo itself is never changed, exports add an edited copy.
+/// Crop and brightness are saved as a soft edit: the photo itself is never
+/// changed, exports add an edited copy.
 struct FullScreenPhotoView: View {
     let item: PhotoItem
+    /// Runs after an edit is stored, before the viewer closes.
+    var onSaved: () async -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
     @Environment(\.modelContext) private var context
@@ -29,40 +31,18 @@ struct FullScreenPhotoView: View {
     /// The soft crop stored for this photo when the viewer opened.
     @State private var saved: SoftCrop?
     @State private var tracker = CropTracker()
-    /// What closing would change; asked about in an alert. Kept after the
-    /// alert goes away so its title doesn't blank while it fades.
-    @State private var pending: PendingEdit?
-    @State private var isPrompting = false
+    @State private var isConfirmingDiscard = false
+    /// Height of the status bar area (Dynamic Island), where Cancel and Done sit.
+    @State private var topInset: CGFloat = 0
+    /// Saved and about to close; further taps on Done or Cancel do nothing.
+    @State private var isSaving = false
     /// Height of the bottom controls, kept clear of the crop frame.
     @State private var controlsHeight: CGFloat = 60
 
     private static let brightnessRange = BrightnessCurve.range
 
-    private struct PendingEdit {
-        let crop: SoftCrop?
-        let brightness: Int
-        let cropChanged: Bool
-        let brightnessChanged: Bool
-
-        /// Clears what was saved and adds nothing new.
-        var removesOnly: Bool {
-            (!cropChanged || crop == nil) && (!brightnessChanged || brightness == 0)
-        }
-
-        var title: String {
-            switch (cropChanged, brightnessChanged, removesOnly) {
-            case (true, true, false): return "Save Changes?"
-            case (true, true, true): return "Remove Saved Edits?"
-            case (true, false, false): return "Save Crop?"
-            case (true, false, true): return "Remove Saved Crop?"
-            case (false, _, false): return "Save Brightness?"
-            case (false, _, true): return "Remove Saved Brightness?"
-            }
-        }
-    }
-
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
             if let shown {
                 PhotoCanvasView(image: shown, aspect: aspect, initialCrop: saved,
@@ -72,33 +52,21 @@ struct FullScreenPhotoView: View {
                 ProgressView().tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
-            }
-            .padding(16)
-            .accessibilityLabel("Close")
         }
         .overlay(alignment: .bottom) { if shown != nil { controls } }
+        .overlay {
+            // A tap anywhere else keeps editing.
+            if isConfirmingDiscard {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { setConfirmingDiscard(false) }
+            }
+        }
+        .overlay(alignment: .top) { topBar }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
-        .alert(pending?.title ?? "", isPresented: prompting(removal: false)) {
-            Button("Save") { savePending() }
-            Button("Don't Save", role: .destructive) { dismiss() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Saved in Pickory only: the photo itself isn't changed. Exports add an edited copy.")
-        }
-        .alert(pending?.title ?? "", isPresented: prompting(removal: true)) {
-            Button("Remove", role: .destructive) { savePending() }
-            Button("Keep") { dismiss() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The photo itself isn't changed either way.")
-        }
         .task(id: item.id) {
             let state = PhotoStateStore(context: context).state(source: item.source, photoID: item.id)
             saved = state?.softCrop
@@ -121,6 +89,42 @@ struct FullScreenPhotoView: View {
     }
 
     // MARK: Controls
+
+    private var topBar: some View {
+        HStack(alignment: .top) {
+            // Negative spacing: the pills sit closer than their tap areas.
+            VStack(alignment: .leading, spacing: -10) {
+                Button(action: cancel) { pill("Cancel") }
+                if isConfirmingDiscard {
+                    Button { dismiss() } label: { pill("Discard changes?", color: .red) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topLeading)))
+                }
+            }
+            Spacer()
+            Button(action: done) { pill("Done", weight: .semibold) }
+        }
+        // Either side of the Dynamic Island, level with it. Far enough in to
+        // clear the screen's rounded corners.
+        .padding(.horizontal, 20)
+        .padding(.top, max(topInset / 2 - 22, 4))
+        .ignoresSafeArea(edges: .top)
+    }
+
+    /// A small label on glass, inside a tap area of the full 44 pt.
+    private func pill(_ title: String, weight: Font.Weight = .medium, color: Color = .white) -> some View {
+        Text(title)
+            .font(.footnote.weight(weight))
+            .foregroundStyle(color)
+            .padding(.horizontal, Spacing.s)
+            .frame(height: 28)
+            .background(.ultraThinMaterial, in: Capsule())
+            .frame(height: 44)
+            .contentShape(Rectangle())
+    }
+
+    private func setConfirmingDiscard(_ confirming: Bool) {
+        withAnimation(.snappy(duration: 0.18)) { isConfirmingDiscard = confirming }
+    }
 
     /// One row when it fits, otherwise brightness above crop (narrow phones).
     private var controls: some View {
@@ -196,30 +200,33 @@ struct FullScreenPhotoView: View {
 
     // MARK: Closing
 
-    private func close() {
-        guard shown != nil else { dismiss(); return }
+    /// What Done would store; nil when nothing differs from what's saved.
+    private var changedEdit: SoftEdit? {
+        guard shown != nil else { return nil }
         let framed = aspect == nil ? nil : tracker.crop ?? saved
         let cropChanged = framed.map { !$0.isClose(to: saved) } ?? (saved != nil)
-        let brightnessChanged = brightness != savedBrightness
-        guard cropChanged || brightnessChanged else { dismiss(); return }
-        pending = PendingEdit(crop: cropChanged ? framed : saved, brightness: brightness,
-                              cropChanged: cropChanged, brightnessChanged: brightnessChanged)
-        isPrompting = true
+        guard cropChanged || brightness != savedBrightness else { return nil }
+        return SoftEdit(crop: cropChanged ? framed : saved, brightness: brightness)
     }
 
-    private func savePending() {
-        guard let pending else { return }
+    private func cancel() {
+        guard !isSaving else { return }
+        if changedEdit == nil { dismiss() } else { setConfirmingDiscard(!isConfirmingDiscard) }
+    }
+
+    private func done() {
+        guard !isSaving else { return }
+        guard let edit = changedEdit else { dismiss(); return }
+        isSaving = true
         PhotoStateStore(context: context).update(source: item.source, photoID: item.id) {
-            $0.softCrop = pending.crop
-            $0.brightness = pending.brightness
+            $0.softCrop = edit.crop
+            $0.brightness = edit.brightness
         }
-        if !pending.removesOnly { Haptics.success() }
-        dismiss()
-    }
-
-    private func prompting(removal: Bool) -> Binding<Bool> {
-        Binding(get: { isPrompting && pending?.removesOnly == removal },
-                set: { isPrompting = $0 })
+        if !edit.isEmpty { Haptics.success() }
+        Task {
+            await onSaved()
+            dismiss()
+        }
     }
 }
 

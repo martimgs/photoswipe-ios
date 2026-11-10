@@ -40,8 +40,10 @@ struct PhotoCardView: View {
     var isPeeking = false
 
     @State private var image: UIImage?
+    /// The brightness `image` was rendered at.
+    @State private var imageBrightness = 0
     /// Sharp enough to zoom into; loaded on the first pinch only.
-    @State private var detail: UIImage?
+    @State private var detail: (brightness: Int, image: UIImage)?
     @Environment(\.displayScale) private var displayScale
 
     /// Width / height of the photo. PhotoKit knows it up front; Dropbox
@@ -58,8 +60,13 @@ struct PhotoCardView: View {
     var body: some View {
         GeometryReader { geo in
             // Anything already in memory shows on the very first frame.
-            let shown = detail ?? image ?? ImageLoader.shared.cardPlaceholder(
-                for: item, fullPixelSize: pixelSize(fitting: geo.size), brightness: brightness)
+            // An image at an old brightness is only the last resort, so a
+            // newly saved brightness never shows the previous one first.
+            let shown = (detail?.brightness == brightness ? detail?.image : nil)
+                ?? (imageBrightness == brightness ? image : nil)
+                ?? ImageLoader.shared.cardPlaceholder(
+                    for: item, fullPixelSize: pixelSize(fitting: geo.size), brightness: brightness)
+                ?? image
             let ratio = aspect(of: shown)
             let fitted = Self.fit(aspect: ratio, in: geo.size)
             ZStack {
@@ -92,7 +99,6 @@ struct PhotoCardView: View {
             .animation(.easeOut(duration: 0.2), value: ratio)
             .task(id: LoadKey(id: item.id, crop: crop, brightness: brightness)) { await loadImage(fitting: geo.size) }
             .task(id: isPeeking) { await loadDetail() }
-            .onChange(of: brightness) { detail = nil }
         }
         .accessibilityElement()
         .accessibilityLabel(item.date.map {
@@ -138,8 +144,13 @@ struct PhotoCardView: View {
     /// the photo is oriented, uncropped. A soft crop shows only part of
     /// the image, so it gets proportionally more (up to 3x).
     private func pixelSize(fitting cardSize: CGSize) -> CGSize {
+        Self.loadSize(cardPixelSide: max(cardSize.width, cardSize.height) * displayScale, crop: crop)
+    }
+
+    /// The size a card of this many pixels loads, for getting it ready early.
+    static func loadSize(cardPixelSide: CGFloat, crop: SoftCrop?) -> CGSize {
         let zoom = crop.map { min(1 / max(min($0.rect.width, $0.rect.height), 0.01), 3) } ?? 1
-        let side = (max(cardSize.width, cardSize.height) * displayScale * zoom).rounded()
+        let side = (cardPixelSide * zoom).rounded()
         return CGSize(width: side, height: side)
     }
 
@@ -149,28 +160,33 @@ struct PhotoCardView: View {
         let loader = ImageLoader.shared
         let full = pixelSize(fitting: cardSize)
         if let sharp = loader.cachedImage(for: item, pixelSize: full, fill: false, brightness: brightness) {
-            image = sharp
+            show(sharp)
             return
         }
         if let preview = await loader.image(for: item, pixelSize: ImageLoader.previewSize, fill: false,
                                             brightness: brightness) {
             guard !Task.isCancelled else { return }
-            image = preview
+            show(preview)
         }
         try? await Task.sleep(for: .milliseconds(120))
         guard !Task.isCancelled,
               let sharp = await loader.image(for: item, pixelSize: full, fill: false, brightness: brightness),
               !Task.isCancelled else { return }
-        image = sharp
+        show(sharp)
+    }
+
+    private func show(_ loaded: UIImage) {
+        image = loaded
+        imageBrightness = brightness
     }
 
     /// Same size as the full-screen viewer, so opening it afterwards is instant.
     private func loadDetail() async {
-        guard isPeeking, detail == nil else { return }
+        guard isPeeking, detail?.brightness != brightness else { return }
         let size = ImageLoader.zoomableSize(displayScale: displayScale)
         guard let sharp = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false,
                                                          brightness: brightness),
               !Task.isCancelled else { return }
-        detail = sharp
+        detail = (brightness, sharp)
     }
 }

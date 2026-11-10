@@ -53,11 +53,29 @@ struct SwipeDeckView: View {
         .background(Theme.paper.ignoresSafeArea())
         .navigationSubtitle(isLandscape ? "" : subtitle)
         .toolbar { toolbarContent }
-        .fullScreenCover(item: $fullScreen, onDismiss: vm.reloadEdits) { FullScreenPhotoView(item: $0) }
+        .fullScreenCover(item: $fullScreen) { item in
+            FullScreenPhotoView(item: item) { await editSaved(on: item) }
+        }
         .onPreferenceChange(CardSizeKey.self) { side in
             if side > 0 { cardPixelSide = side * displayScale }
         }
         .onChange(of: vm.currentID, initial: true) { _, _ in prefetchAround() }
+    }
+
+    /// Called before the full-screen viewer closes, so the card is already
+    /// showing the saved edit when it comes back into view. Waits only
+    /// briefly: a photo that needs the network finishes on the card instead.
+    private func editSaved(on item: PhotoItem) async {
+        vm.reloadEdits()
+        guard cardPixelSide > 0 else { return }
+        let size = PhotoCardView.loadSize(cardPixelSide: cardPixelSide, crop: vm.crop(of: item))
+        let brightness = vm.brightness(of: item)
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { _ = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false, brightness: brightness) }
+            group.addTask { try? await Task.sleep(for: .milliseconds(500)) }
+            await group.next()
+            group.cancelAll()
+        }
     }
 
     /// Nearest photo first: filmstrip thumbnails and card previews for a wide
@@ -66,12 +84,12 @@ struct SwipeDeckView: View {
         let d = vm.deck
         guard let idx = d.firstIndex(where: { $0.id == vm.currentID }) else { return }
         let thumb = CGSize(width: FilmstripView.height * displayScale, height: FilmstripView.height * displayScale)
-        let full = CGSize(width: cardPixelSide, height: cardPixelSide)
         var requests: [ImageLoader.Request] = []
         for distance in 0...40 {
             for i in Set([idx - distance, idx + distance]).sorted() where d.indices.contains(i) {
                 let brightness = vm.brightness(of: d[i])
                 if !scrubbing, cardPixelSide > 0, distance <= 3 {
+                    let full = PhotoCardView.loadSize(cardPixelSide: cardPixelSide, crop: vm.crop(of: d[i]))
                     requests.append(.init(item: d[i], pixelSize: full, fill: false, brightness: brightness))
                 }
                 if distance <= 20 {
