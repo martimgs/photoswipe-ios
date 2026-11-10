@@ -1,18 +1,18 @@
 import SwiftUI
 import SwiftData
 import UIKit
-import CoreImage
-import CoreImage.CIFilterBuiltins
 
 /// Full-screen, uncropped view of one photo. Pinch or double-tap to zoom,
 /// drag to pan when zoomed, X to close.
 ///
 /// Review tools along the bottom:
-/// - Brightness −1 / +1 (a soft midtone curve). Preview only, never saved.
+/// - Brightness −1 / +1 (a soft midtone curve).
 /// - Instagram crop 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post carousel,
 ///   dashed line where it splits). The button sticks; drag and pinch the photo
-///   inside the frame. On close, the crop can be saved as a soft crop: the
-///   photo itself is never changed, exports add a cropped copy.
+///   inside the frame.
+///
+/// On close, a changed crop or brightness can be saved as a soft edit: the
+/// photo itself is never changed, exports add an edited copy.
 struct FullScreenPhotoView: View {
     let item: PhotoItem
     @Environment(\.dismiss) private var dismiss
@@ -21,19 +21,45 @@ struct FullScreenPhotoView: View {
     @State private var original: UIImage?
     /// `original` with the brightness preview applied.
     @State private var shown: UIImage?
-    /// Preview brightness in steps. Never saved.
+    /// Brightness step on screen.
     @State private var brightness = 0
+    /// The brightness stored for this photo when the viewer opened.
+    @State private var savedBrightness = 0
     @State private var aspect: CropAspect?
     /// The soft crop stored for this photo when the viewer opened.
     @State private var saved: SoftCrop?
     @State private var tracker = CropTracker()
-    @State private var prompt: Prompt?
+    /// What closing would change; asked about in an alert. Kept after the
+    /// alert goes away so its title doesn't blank while it fades.
+    @State private var pending: PendingEdit?
+    @State private var isPrompting = false
     /// Height of the bottom controls, kept clear of the crop frame.
     @State private var controlsHeight: CGFloat = 60
 
-    private static let brightnessRange = -3...3
+    private static let brightnessRange = BrightnessCurve.range
 
-    private enum Prompt { case save, remove }
+    private struct PendingEdit {
+        let crop: SoftCrop?
+        let brightness: Int
+        let cropChanged: Bool
+        let brightnessChanged: Bool
+
+        /// Clears what was saved and adds nothing new.
+        var removesOnly: Bool {
+            (!cropChanged || crop == nil) && (!brightnessChanged || brightness == 0)
+        }
+
+        var title: String {
+            switch (cropChanged, brightnessChanged, removesOnly) {
+            case (true, true, false): return "Save Changes?"
+            case (true, true, true): return "Remove Saved Edits?"
+            case (true, false, false): return "Save Crop?"
+            case (true, false, true): return "Remove Saved Crop?"
+            case (false, _, false): return "Save Brightness?"
+            case (false, _, true): return "Remove Saved Brightness?"
+            }
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -59,34 +85,39 @@ struct FullScreenPhotoView: View {
         .overlay(alignment: .bottom) { if shown != nil { controls } }
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
-        .alert("Save Crop?", isPresented: isPrompting(.save)) {
-            Button("Save") { save(tracker.crop) }
+        .alert(pending?.title ?? "", isPresented: prompting(removal: false)) {
+            Button("Save") { savePending() }
             Button("Don't Save", role: .destructive) { dismiss() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Saved as a soft crop: the photo itself isn't changed. Exports add a cropped copy.")
+            Text("Saved in Pickory only: the photo itself isn't changed. Exports add an edited copy.")
         }
-        .alert("Remove Saved Crop?", isPresented: isPrompting(.remove)) {
-            Button("Remove", role: .destructive) { save(nil) }
-            Button("Keep Crop") { dismiss() }
+        .alert(pending?.title ?? "", isPresented: prompting(removal: true)) {
+            Button("Remove", role: .destructive) { savePending() }
+            Button("Keep") { dismiss() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The photo itself isn't changed either way.")
         }
         .task(id: item.id) {
-            saved = PhotoStateStore(context: context).state(source: item.source, photoID: item.id)?.softCrop
+            let state = PhotoStateStore(context: context).state(source: item.source, photoID: item.id)
+            saved = state?.softCrop
+            savedBrightness = state?.brightness ?? 0
+            brightness = savedBrightness
             aspect = saved?.aspect
             // Higher resolution than the card so zooming stays sharp.
             original = await ImageLoader.shared.image(for: item, pixelSize: ImageLoader.zoomableSize(displayScale: displayScale), fill: false)
-            shown = original
+            await renderBrightness()
         }
-        .task(id: brightness) {
-            guard let original else { return }
-            if brightness == 0 { shown = original; return }
-            if let adjusted = await BrightnessPreview.apply(brightness, to: original), !Task.isCancelled {
-                shown = adjusted
-            }
-        }
+        .task(id: brightness) { await renderBrightness() }
+    }
+
+    /// Shows `original` at the current brightness step.
+    private func renderBrightness() async {
+        guard let original else { return }
+        let step = brightness
+        let adjusted = step == 0 ? original : await BrightnessCurve.apply(step, to: original) ?? original
+        if step == brightness { shown = adjusted }
     }
 
     // MARK: Controls
@@ -115,7 +146,7 @@ struct FullScreenPhotoView: View {
                     .frame(minWidth: 52, minHeight: 44)
             }
             .accessibilityLabel("Brightness \(brightnessLabel)")
-            .accessibilityHint("Resets the brightness preview")
+            .accessibilityHint("Resets the brightness")
             controlButton("+1", label: "Brighter", enabled: brightness < Self.brightnessRange.upperBound) {
                 brightness += 1
             }
@@ -160,32 +191,35 @@ struct FullScreenPhotoView: View {
     }
 
     private var brightnessLabel: String {
-        brightness == 0 ? "0" : String(format: "%+d", brightness)
+        BrightnessCurve.label(brightness)
     }
 
     // MARK: Closing
 
     private func close() {
         guard shown != nil else { dismiss(); return }
-        if aspect != nil, let crop = tracker.crop {
-            if crop.isClose(to: saved) { dismiss() } else { prompt = .save }
-        } else if aspect == nil, saved != nil {
-            prompt = .remove
-        } else {
-            dismiss()
-        }
+        let framed = aspect == nil ? nil : tracker.crop ?? saved
+        let cropChanged = framed.map { !$0.isClose(to: saved) } ?? (saved != nil)
+        let brightnessChanged = brightness != savedBrightness
+        guard cropChanged || brightnessChanged else { dismiss(); return }
+        pending = PendingEdit(crop: cropChanged ? framed : saved, brightness: brightness,
+                              cropChanged: cropChanged, brightnessChanged: brightnessChanged)
+        isPrompting = true
     }
 
-    private func save(_ crop: SoftCrop?) {
+    private func savePending() {
+        guard let pending else { return }
         PhotoStateStore(context: context).update(source: item.source, photoID: item.id) {
-            $0.softCrop = crop
+            $0.softCrop = pending.crop
+            $0.brightness = pending.brightness
         }
-        if crop != nil { Haptics.success() }
+        if !pending.removesOnly { Haptics.success() }
         dismiss()
     }
 
-    private func isPrompting(_ p: Prompt) -> Binding<Bool> {
-        Binding(get: { prompt == p }, set: { if !$0 { prompt = nil } })
+    private func prompting(removal: Bool) -> Binding<Bool> {
+        Binding(get: { isPrompting && pending?.removesOnly == removal },
+                set: { isPrompting = $0 })
     }
 }
 
@@ -193,43 +227,6 @@ struct FullScreenPhotoView: View {
 /// re-render the SwiftUI view on every frame.
 private final class CropTracker {
     var crop: SoftCrop?
-}
-
-/// Review-only brightness: a tone curve that lifts (or lowers) the midtones
-/// like dragging the middle of a Photoshop curve. Black and white stay where
-/// they are, so highlights compress instead of clipping. Rendered off the
-/// main thread at the image's own size so zoom and crop framing are untouched.
-private enum BrightnessPreview {
-    /// P3, so wide-gamut colours stay inside the curve's 0–1 range.
-    private static let context = CIContext(options: [
-        .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3) as Any,
-    ])
-    /// Curve bend per step. The largest step's total must stay under 1, or
-    /// the curve would stop rising towards white.
-    private static let bendPerStep: CGFloat = 0.3
-
-    static func apply(_ step: Int, to image: UIImage) async -> UIImage? {
-        guard let cg = image.cgImage else { return nil }
-        let scale = image.scale, orientation = image.imageOrientation
-        let bend = CGFloat(step) * bendPerStep
-        return await Task.detached(priority: .userInitiated) {
-            let input = CIImage(cgImage: cg)
-            func point(_ x: CGFloat) -> CGPoint { CGPoint(x: x, y: x + bend * x * (1 - x)) }
-            let filter = CIFilter.toneCurve()
-            filter.inputImage = input
-            filter.point0 = point(0)
-            filter.point1 = point(0.25)
-            filter.point2 = point(0.5)
-            filter.point3 = point(0.75)
-            filter.point4 = point(1)
-            guard let output = filter.outputImage,
-                  let space = CGColorSpace(name: CGColorSpace.displayP3),
-                  let rendered = context.createCGImage(output, from: input.extent,
-                                                       format: .RGBA8, colorSpace: space)
-            else { return nil }
-            return UIImage(cgImage: rendered, scale: scale, orientation: orientation)
-        }.value
-    }
 }
 
 // MARK: - Canvas

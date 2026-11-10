@@ -25,6 +25,9 @@ final class PhotoState {
     var cropY: Double = 0
     var cropWidth: Double = 0
     var cropHeight: Double = 0
+    /// Saved brightness step (`BrightnessCurve`), 0 = none. Never applied to
+    /// the photo itself.
+    var brightness: Int = 0
 
     init(source: PhotoSourceKind, photoID: String, isRejected: Bool = false, rating: Int = 0) {
         self.sourceRaw = source.rawValue

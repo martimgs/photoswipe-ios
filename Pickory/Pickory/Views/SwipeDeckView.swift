@@ -53,7 +53,7 @@ struct SwipeDeckView: View {
         .background(Theme.paper.ignoresSafeArea())
         .navigationSubtitle(isLandscape ? "" : subtitle)
         .toolbar { toolbarContent }
-        .fullScreenCover(item: $fullScreen, onDismiss: vm.reloadCrops) { FullScreenPhotoView(item: $0) }
+        .fullScreenCover(item: $fullScreen, onDismiss: vm.reloadEdits) { FullScreenPhotoView(item: $0) }
         .onPreferenceChange(CardSizeKey.self) { side in
             if side > 0 { cardPixelSide = side * displayScale }
         }
@@ -70,11 +70,13 @@ struct SwipeDeckView: View {
         var requests: [ImageLoader.Request] = []
         for distance in 0...40 {
             for i in Set([idx - distance, idx + distance]).sorted() where d.indices.contains(i) {
+                let brightness = vm.brightness(of: d[i])
                 if !scrubbing, cardPixelSide > 0, distance <= 3 {
-                    requests.append(.init(item: d[i], pixelSize: full, fill: false))
+                    requests.append(.init(item: d[i], pixelSize: full, fill: false, brightness: brightness))
                 }
                 if distance <= 20 {
-                    requests.append(.init(item: d[i], pixelSize: ImageLoader.previewSize, fill: false))
+                    requests.append(.init(item: d[i], pixelSize: ImageLoader.previewSize, fill: false,
+                                          brightness: brightness))
                 }
                 requests.append(.init(item: d[i], pixelSize: thumb, fill: true))
             }
@@ -211,7 +213,7 @@ struct SwipeDeckView: View {
         return ZStack {
             ForEach(base) { item in
                 let isCurrent = item.id == current.id
-                PhotoCardView(item: item, crop: vm.crop(of: item),
+                PhotoCardView(item: item, crop: vm.crop(of: item), brightness: vm.brightness(of: item),
                               intent: isCurrent ? intent : nil,
                               intentStrength: isCurrent ? strength : 0,
                               isPeeking: isCurrent && isPeeking)
@@ -223,7 +225,8 @@ struct SwipeDeckView: View {
                     .transition(.identity)
             }
             ForEach(flying) { f in
-                PhotoCardView(item: f.item, crop: vm.crop(of: f.item), intent: f.intent, intentStrength: 1)
+                PhotoCardView(item: f.item, crop: vm.crop(of: f.item), brightness: vm.brightness(of: f.item),
+                              intent: f.intent, intentStrength: 1)
                     .modifier(DeckCardStyle(role: .current, drag: f.offset, progress: 1))
                     .zIndex(2)
                     .allowsHitTesting(false)

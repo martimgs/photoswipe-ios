@@ -32,6 +32,8 @@ enum SwipeIntent: Equatable {
 struct PhotoCardView: View {
     let item: PhotoItem
     var crop: SoftCrop? = nil
+    /// Saved brightness step, shown on the card. Never applied to the photo.
+    var brightness = 0
     var intent: SwipeIntent? = nil
     var intentStrength: Double = 0
     /// Being pinched: fetch a sharper image and hide the badge.
@@ -57,7 +59,7 @@ struct PhotoCardView: View {
         GeometryReader { geo in
             // Anything already in memory shows on the very first frame.
             let shown = detail ?? image ?? ImageLoader.shared.cardPlaceholder(
-                for: item, fullPixelSize: pixelSize(fitting: geo.size))
+                for: item, fullPixelSize: pixelSize(fitting: geo.size), brightness: brightness)
             let ratio = aspect(of: shown)
             let fitted = Self.fit(aspect: ratio, in: geo.size)
             ZStack {
@@ -76,14 +78,21 @@ struct PhotoCardView: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if let crop, intent == nil, !isPeeking { CropBadge(aspect: crop.aspect) }
+                if intent == nil, !isPeeking {
+                    // Each badge has its own 6 pt margin.
+                    HStack(spacing: -6) {
+                        if let crop { CropBadge(aspect: crop.aspect) }
+                        if brightness != 0 { BrightnessBadge(step: brightness) }
+                    }
+                }
             }
             .frame(width: fitted.width, height: fitted.height)
             .clipShape(RoundedRectangle(cornerRadius: Radius.photo, style: .continuous))
             .frame(width: geo.size.width, height: geo.size.height)
             .animation(.easeOut(duration: 0.2), value: ratio)
-            .task(id: LoadKey(id: item.id, crop: crop)) { await loadImage(fitting: geo.size) }
+            .task(id: LoadKey(id: item.id, crop: crop, brightness: brightness)) { await loadImage(fitting: geo.size) }
             .task(id: isPeeking) { await loadDetail() }
+            .onChange(of: brightness) { detail = nil }
         }
         .accessibilityElement()
         .accessibilityLabel(item.date.map {
@@ -91,10 +100,12 @@ struct PhotoCardView: View {
         } ?? "Photo")
     }
 
-    /// Reload when a crop is saved: it may need a sharper image.
+    /// Reload when a crop is saved (it may need a sharper image) or the
+    /// saved brightness changes.
     private struct LoadKey: Equatable {
         let id: String
         let crop: SoftCrop?
+        let brightness: Int
     }
 
     private func overlay(_ intent: SwipeIntent) -> some View {
@@ -137,17 +148,18 @@ struct PhotoCardView: View {
     private func loadImage(fitting cardSize: CGSize) async {
         let loader = ImageLoader.shared
         let full = pixelSize(fitting: cardSize)
-        if let sharp = loader.cachedImage(for: item, pixelSize: full, fill: false) {
+        if let sharp = loader.cachedImage(for: item, pixelSize: full, fill: false, brightness: brightness) {
             image = sharp
             return
         }
-        if let preview = await loader.image(for: item, pixelSize: ImageLoader.previewSize, fill: false) {
+        if let preview = await loader.image(for: item, pixelSize: ImageLoader.previewSize, fill: false,
+                                            brightness: brightness) {
             guard !Task.isCancelled else { return }
             image = preview
         }
         try? await Task.sleep(for: .milliseconds(120))
         guard !Task.isCancelled,
-              let sharp = await loader.image(for: item, pixelSize: full, fill: false),
+              let sharp = await loader.image(for: item, pixelSize: full, fill: false, brightness: brightness),
               !Task.isCancelled else { return }
         image = sharp
     }
@@ -156,7 +168,8 @@ struct PhotoCardView: View {
     private func loadDetail() async {
         guard isPeeking, detail == nil else { return }
         let size = ImageLoader.zoomableSize(displayScale: displayScale)
-        guard let sharp = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false),
+        guard let sharp = await ImageLoader.shared.image(for: item, pixelSize: size, fill: false,
+                                                         brightness: brightness),
               !Task.isCancelled else { return }
         detail = sharp
     }

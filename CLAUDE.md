@@ -40,9 +40,10 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
 - Pinch the card = quick zoom that follows the fingers and snaps back on release (no swipe
   happens during a pinch).
 - Tap the card = full screen (zoom/pan). Bottom bar: brightness −1 / +1 (soft midtone curve that
-  never clips highlights; preview only, never saved) and sticky Instagram crop buttons 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post
+  never clips highlights; can be saved with the crop, see below) and sticky Instagram crop buttons 4:5 / 1:1 / 9:16 (Stories) / 8:5 (two-post
   carousel, dashed line where it splits); drag/pinch the photo inside the frame. On close, a
-  changed crop asks to be saved as a **soft crop** — the photo is never modified; the swipe
+  changed crop or brightness asks to be saved as a **soft edit** (brightness alone gets a sun badge
+  and an "(edited)" export copy) — the photo is never modified; the swipe
   card and grid show the cropped part with a crop badge, and exports add a cropped JPEG copy
   next to the untouched original (an 8:5 crop also as its two 4:5 posts).
 
@@ -71,7 +72,8 @@ UI reference: [`docs/mockup.png`](docs/mockup.png) (4 screens).
   ```
   `PHAsset` is an immutable snapshot — track written ratings locally, and serialize writes per
   asset so an undo can't race the write it undoes.
-- **Soft crops** (aspect + normalized rect in the upright photo) live on `PhotoState`.
+- **Soft edits** (crop aspect + normalized rect in the upright photo, brightness step) live on
+  `PhotoState`.
 - **Rejected status and connected albums** live in SwiftData, keyed by (source, photo/album
   identifier), so Dropbox photos can reuse the same model later.
 - Deployment target: **iOS 27.0**.

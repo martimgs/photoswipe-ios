@@ -58,15 +58,15 @@ struct ExportSheet: View {
 
     // MARK: Export
 
-    /// Saved soft crops for the photos being exported.
-    private var crops: [String: SoftCrop] {
+    /// Saved soft edits for the photos being exported.
+    private var edits: [String: SoftEdit] {
         let ids = Set(items.map(\.id))
-        return PhotoStateStore(context: context).crops(source: album.source).filter { ids.contains($0.key) }
+        return PhotoStateStore(context: context).edits(source: album.source).filter { ids.contains($0.key) }
     }
 
     private func export(to destination: String) {
-        let crops = self.crops
-        let total = items.count + crops.values.map(ExportService.cropFileCount).reduce(0, +)
+        let edits = self.edits
+        let total = items.count + edits.values.map(ExportService.editFileCount).reduce(0, +)
         phase = .exporting(done: 0, total: total, folder: destination)
         Task {
             do {
@@ -78,11 +78,11 @@ struct ExportSheet: View {
                 case .dropbox:
                     let files = dropboxFiles()
                     let copied = try await ExportService.shared.copyDropboxFiles(files, to: destination, progress: update)
-                    let cropped = files.compactMap { f in crops[f.fileID].map { (fileID: f.fileID, name: f.name, crop: $0) } }
-                    result = try await ExportService.shared.uploadDropboxCrops(cropped, to: destination,
+                    let edited = files.compactMap { f in edits[f.fileID].map { (fileID: f.fileID, name: f.name, edit: $0) } }
+                    result = try await ExportService.shared.uploadDropboxEdits(edited, to: destination,
                                                                                adding: copied, progress: update)
                 case .applePhotos:
-                    result = try await ExportService.shared.uploadAssets(items.compactMap(\.asset), crops: crops,
+                    result = try await ExportService.shared.uploadAssets(items.compactMap(\.asset), edits: edits,
                                                                          to: destination, progress: update)
                 }
                 Haptics.success()
@@ -121,8 +121,8 @@ struct ExportSheet: View {
                 Image(systemName: "checkmark.circle").font(.largeTitle.weight(.ultraLight))
                 Text("Saved \(result.exported) photo\(result.exported == 1 ? "" : "s")")
                     .font(.title3)
-                if result.crops > 0 {
-                    Text("plus \(result.crops) cropped cop\(result.crops == 1 ? "y" : "ies")")
+                if result.edited > 0 {
+                    Text("plus \(result.edited) edited cop\(result.edited == 1 ? "y" : "ies")")
                         .font(.metadata).foregroundStyle(Theme.inkSecondary)
                 }
                 Text(folder).font(.smallMetadata).foregroundStyle(Theme.inkSecondary)

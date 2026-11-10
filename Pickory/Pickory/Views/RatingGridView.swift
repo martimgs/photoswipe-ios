@@ -172,7 +172,8 @@ struct RatingGridView: View {
             vm.jump(to: asset)
             dismiss()
         } label: {
-            GridPhotoCell(item: asset, width: width, rating: rating, crop: crop, dimmed: rejected,
+            GridPhotoCell(item: asset, width: width, rating: rating, crop: crop,
+                          brightness: vm.brightness(of: asset), dimmed: rejected,
                           unsynced: asset.source == .dropbox
                               && sync.isUnsynced(fileID: asset.id, isOnline: connectivity.isOnline))
                 .overlay(alignment: .bottomLeading) {

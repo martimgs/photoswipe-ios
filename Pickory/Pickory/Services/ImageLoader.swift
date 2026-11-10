@@ -22,6 +22,7 @@ final class ImageLoader {
         let item: PhotoItem
         let pixelSize: CGSize
         let fill: Bool
+        var brightness = 0
     }
 
     private let memory = NSCache<NSString, UIImage>()
@@ -62,19 +63,20 @@ final class ImageLoader {
     }
 
     /// Already in memory at exactly this size — no waiting.
-    func cachedImage(for item: PhotoItem, pixelSize: CGSize, fill: Bool) -> UIImage? {
-        memory.object(forKey: Self.key(item, pixelSize, fill) as NSString)
+    func cachedImage(for item: PhotoItem, pixelSize: CGSize, fill: Bool, brightness: Int = 0) -> UIImage? {
+        memory.object(forKey: Self.key(item, pixelSize, fill, brightness) as NSString)
     }
 
     /// The sharpest uncropped image of `item` already in memory.
-    func cardPlaceholder(for item: PhotoItem, fullPixelSize: CGSize) -> UIImage? {
-        cachedImage(for: item, pixelSize: fullPixelSize, fill: false)
-            ?? cachedImage(for: item, pixelSize: Self.previewSize, fill: false)
+    func cardPlaceholder(for item: PhotoItem, fullPixelSize: CGSize, brightness: Int = 0) -> UIImage? {
+        cachedImage(for: item, pixelSize: fullPixelSize, fill: false, brightness: brightness)
+            ?? cachedImage(for: item, pixelSize: Self.previewSize, fill: false, brightness: brightness)
     }
 
     /// Returns nil if the calling task is cancelled before the image is ready.
-    func image(for item: PhotoItem, pixelSize: CGSize, fill: Bool = true) async -> UIImage? {
-        let key = Self.key(item, pixelSize, fill)
+    /// `brightness` is a saved `BrightnessCurve` step, cached separately.
+    func image(for item: PhotoItem, pixelSize: CGSize, fill: Bool = true, brightness: Int = 0) async -> UIImage? {
+        let key = Self.key(item, pixelSize, fill, brightness)
         if let cached = memory.object(forKey: key as NSString) { return cached }
         if Task.isCancelled { return nil }
 
@@ -85,7 +87,9 @@ final class ImageLoader {
         } else {
             let token = UUID()
             let task = Task {
-                let image = await self.load(item, pixelSize: pixelSize, fill: fill)
+                let image = brightness == 0
+                    ? await self.load(item, pixelSize: pixelSize, fill: fill)
+                    : await self.brightened(item, pixelSize: pixelSize, fill: fill, step: brightness)
                 if let image { self.memory.setObject(image, forKey: key as NSString, cost: Self.cost(of: image)) }
                 if self.loads[key]?.token == token { self.loads[key] = nil }
                 return image
@@ -130,15 +134,20 @@ final class ImageLoader {
     private func pump() {
         while prefetching < maxPrefetches, !queue.isEmpty {
             let r = queue.removeFirst()
-            let key = Self.key(r.item, r.pixelSize, r.fill)
+            let key = Self.key(r.item, r.pixelSize, r.fill, r.brightness)
             guard memory.object(forKey: key as NSString) == nil, loads[key] == nil else { continue }
             prefetching += 1
             Task {
-                _ = await image(for: r.item, pixelSize: r.pixelSize, fill: r.fill)
+                _ = await image(for: r.item, pixelSize: r.pixelSize, fill: r.fill, brightness: r.brightness)
                 prefetching -= 1
                 pump()
             }
         }
+    }
+
+    private func brightened(_ item: PhotoItem, pixelSize: CGSize, fill: Bool, step: Int) async -> UIImage? {
+        guard let base = await image(for: item, pixelSize: pixelSize, fill: fill) else { return nil }
+        return await BrightnessCurve.apply(step, to: base) ?? base
     }
 
     private func load(_ item: PhotoItem, pixelSize: CGSize, fill: Bool) async -> UIImage? {
@@ -170,8 +179,8 @@ final class ImageLoader {
         }
     }
 
-    private static func key(_ item: PhotoItem, _ pixelSize: CGSize, _ fill: Bool) -> String {
-        "\(item.source.rawValue)|\(item.id)|\(Int(max(pixelSize.width, pixelSize.height)))|\(fill)"
+    private static func key(_ item: PhotoItem, _ pixelSize: CGSize, _ fill: Bool, _ brightness: Int) -> String {
+        "\(item.source.rawValue)|\(item.id)|\(Int(max(pixelSize.width, pixelSize.height)))|\(fill)|\(brightness)"
     }
 
     private static func cost(of image: UIImage) -> Int {

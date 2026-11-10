@@ -108,13 +108,16 @@ struct PhotoStateStore {
             predicate: #Predicate { $0.sourceRaw == raw && $0.photoID == photoID })).first
     }
 
-    /// Saved soft crops by photo ID.
-    func crops(source: PhotoSourceKind) -> [String: SoftCrop] {
+    /// Saved soft crops and brightness by photo ID.
+    func edits(source: PhotoSourceKind) -> [String: SoftEdit] {
         let raw = source.rawValue
-        let cropped = (try? context.fetch(FetchDescriptor<PhotoState>(
-            predicate: #Predicate { $0.sourceRaw == raw && $0.cropAspectRaw != nil }))) ?? []
-        return Dictionary(cropped.compactMap { s in s.softCrop.map { (s.photoID, $0) } },
-                          uniquingKeysWith: { a, _ in a })
+        let edited = (try? context.fetch(FetchDescriptor<PhotoState>(
+            predicate: #Predicate { $0.sourceRaw == raw && ($0.cropAspectRaw != nil || $0.brightness != 0) }))) ?? []
+        let pairs = edited.compactMap { s -> (String, SoftEdit)? in
+            let edit = SoftEdit(crop: s.softCrop, brightness: s.brightness)
+            return edit.isEmpty ? nil : (s.photoID, edit)
+        }
+        return Dictionary(pairs, uniquingKeysWith: { a, _ in a })
     }
 
     func update(source: PhotoSourceKind, photoID: String, _ change: (PhotoState) -> Void) {
