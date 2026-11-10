@@ -31,7 +31,11 @@ struct FullScreenPhotoView: View {
     /// The soft crop stored for this photo when the viewer opened.
     @State private var saved: SoftCrop?
     @State private var tracker = CropTracker()
-    @State private var isConfirmingDiscard = false
+    /// The small question showing under Cancel or Revert.
+    @State private var confirming: Confirmation?
+    /// The photo was dragged or zoomed away from its saved crop. A copy of
+    /// what the canvas reports, so Done and Revert swap as soon as it moves.
+    @State private var framingChanged = false
     /// Height of the status bar area (Dynamic Island), where Cancel and Done sit.
     @State private var topInset: CGFloat = 0
     /// Saved and about to close; further taps on Done or Cancel do nothing.
@@ -41,12 +45,14 @@ struct FullScreenPhotoView: View {
 
     private static let brightnessRange = BrightnessCurve.range
 
+    private enum Confirmation { case discard, revert }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let shown {
                 PhotoCanvasView(image: shown, aspect: aspect, initialCrop: saved,
-                                bottomReserve: controlsHeight) { tracker.crop = $0 }
+                                bottomReserve: controlsHeight, onCrop: cropReported)
                     .ignoresSafeArea()
             } else {
                 ProgressView().tint(.white)
@@ -56,11 +62,11 @@ struct FullScreenPhotoView: View {
         .overlay(alignment: .bottom) { if shown != nil { controls } }
         .overlay {
             // A tap anywhere else keeps editing.
-            if isConfirmingDiscard {
+            if confirming != nil {
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
-                    .onTapGesture { setConfirmingDiscard(false) }
+                    .onTapGesture { setConfirming(nil) }
             }
         }
         .overlay(alignment: .top) { topBar }
@@ -95,13 +101,24 @@ struct FullScreenPhotoView: View {
             // Negative spacing: the pills sit closer than their tap areas.
             VStack(alignment: .leading, spacing: -10) {
                 Button(action: cancel) { pill("Cancel") }
-                if isConfirmingDiscard {
+                if confirming == .discard {
                     Button { dismiss() } label: { pill("Discard changes?", color: .red) }
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topLeading)))
                 }
             }
             Spacer()
-            Button(action: done) { pill("Done", weight: .semibold) }
+            // With nothing to save, Done would only repeat Cancel.
+            VStack(alignment: .trailing, spacing: -10) {
+                if canRevert {
+                    Button { toggleConfirming(.revert) } label: { pill("Revert", weight: .semibold, color: .red) }
+                } else {
+                    Button(action: done) { pill("Done", weight: .semibold) }
+                }
+                if confirming == .revert {
+                    Button { save(SoftEdit()) } label: { pill("Revert to original?", color: .red) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topTrailing)))
+                }
+            }
         }
         // Either side of the Dynamic Island, level with it. Far enough in to
         // clear the screen's rounded corners.
@@ -122,8 +139,12 @@ struct FullScreenPhotoView: View {
             .contentShape(Rectangle())
     }
 
-    private func setConfirmingDiscard(_ confirming: Bool) {
-        withAnimation(.snappy(duration: 0.18)) { isConfirmingDiscard = confirming }
+    private func setConfirming(_ question: Confirmation?) {
+        withAnimation(.snappy(duration: 0.18)) { confirming = question }
+    }
+
+    private func toggleConfirming(_ question: Confirmation) {
+        setConfirming(confirming == question ? nil : question)
     }
 
     /// One row when it fits, otherwise brightness above crop (narrow phones).
@@ -209,14 +230,33 @@ struct FullScreenPhotoView: View {
         return SoftEdit(crop: cropChanged ? framed : saved, brightness: brightness)
     }
 
+    /// Something is saved for this photo and nothing has changed since.
+    private var canRevert: Bool {
+        shown != nil && !framingChanged && changedEdit == nil && (saved != nil || savedBrightness != 0)
+    }
+
+    /// Runs often while the photo moves, and during view updates, so the
+    /// state changes only when the answer flips, and on the next turn.
+    private func cropReported(_ crop: SoftCrop?) {
+        tracker.crop = crop
+        let changed = crop.map { !$0.isClose(to: saved) } ?? false
+        if changed != framingChanged {
+            DispatchQueue.main.async { framingChanged = changed }
+        }
+    }
+
     private func cancel() {
         guard !isSaving else { return }
-        if changedEdit == nil { dismiss() } else { setConfirmingDiscard(!isConfirmingDiscard) }
+        if changedEdit == nil { dismiss() } else { toggleConfirming(.discard) }
     }
 
     private func done() {
         guard !isSaving else { return }
-        guard let edit = changedEdit else { dismiss(); return }
+        if let edit = changedEdit { save(edit) } else { dismiss() }
+    }
+
+    private func save(_ edit: SoftEdit) {
+        guard !isSaving else { return }
         isSaving = true
         PhotoStateStore(context: context).update(source: item.source, photoID: item.id) {
             $0.softCrop = edit.crop
