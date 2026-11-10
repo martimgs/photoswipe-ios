@@ -230,18 +230,24 @@ struct FullScreenPhotoView: View {
         return SoftEdit(crop: cropChanged ? framed : saved, brightness: brightness)
     }
 
-    /// Something is saved for this photo and nothing has changed since.
+    /// Everything stored for this photo when the viewer opened.
+    private var savedEdit: SoftEdit { SoftEdit(crop: saved, brightness: savedBrightness) }
+
+    /// Some edit is saved for this photo and nothing has changed since.
     private var canRevert: Bool {
-        shown != nil && !framingChanged && changedEdit == nil && (saved != nil || savedBrightness != 0)
+        shown != nil && !framingChanged && changedEdit == nil && !savedEdit.isEmpty
     }
 
-    /// Runs often while the photo moves, and during view updates, so the
-    /// state changes only when the answer flips, and on the next turn.
+    /// Runs on every frame the photo moves, during view updates, and with
+    /// in-between framings while a saved crop is being restored. So the flag
+    /// is worked out once, on the next turn, from whatever is latest by then.
     private func cropReported(_ crop: SoftCrop?) {
         tracker.crop = crop
-        let changed = crop.map { !$0.isClose(to: saved) } ?? false
-        if changed != framingChanged {
-            DispatchQueue.main.async { framingChanged = changed }
+        guard !tracker.isUpdateQueued else { return }
+        tracker.isUpdateQueued = true
+        DispatchQueue.main.async {
+            tracker.isUpdateQueued = false
+            framingChanged = tracker.crop.map { !$0.isClose(to: saved) } ?? false
         }
     }
 
@@ -274,6 +280,7 @@ struct FullScreenPhotoView: View {
 /// re-render the SwiftUI view on every frame.
 private final class CropTracker {
     var crop: SoftCrop?
+    var isUpdateQueued = false
 }
 
 // MARK: - Canvas
